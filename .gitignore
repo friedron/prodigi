@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+app/frontend/node_modules/
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+dist-ssr/
+app/frontend/dist/
+*.local
+
+# Vite/Vue specifics
+app/frontend/.vite/
+
+# Gemini CLI
+.gemini/
+skills
+
+# Project specific
+GEMINI.md
+env.yml
+
+# Editor directories and files
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.history/
+
+# VS Code (ignore all settings except shared extensions, across the whole repo)
+**/.vscode/*
+!**/.vscode/extensions.json
+
+# TypeScript
+*.tsbuildinfo
