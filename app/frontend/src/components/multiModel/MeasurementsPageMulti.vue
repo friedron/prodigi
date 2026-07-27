@@ -217,11 +217,6 @@ export default {
             required: true,
         },
     },
-    data() {
-        return {
-            measurement_done: false,
-        };
-    },
     watch: {},
     methods: {
         loadMean(event, model) {
@@ -261,11 +256,6 @@ export default {
         isPageDone(page) {
             return this.measurementsPage.done;
         },
-    },
-    mounted() {
-        this.socket.on("measurement_done", () => {
-            this.measurement_done = true;
-        });
     },
 };
 </script>

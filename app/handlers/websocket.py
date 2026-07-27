@@ -21,6 +21,10 @@ import plotly.io as pio
 from digital_twinning import PredictiveModel, DigitalTwin, JointManager, utils
 from digital_twinning.unv_example_functions import preprocess_modeshape_data as ppm
 from digital_twinning.utils.object_utils import generate_stdrn_simparamset
+from uncertain_variables.variable_set import VariableSet
+from uncertain_variables.variable import Variable
+from uncertain_variables.distributions import NormalDistribution, UniformDistribution, LogNormalDistribution, BetaDistribution, ExponentialDistribution, TranslatedDistribution
+
 
 # Local library imports
 from utils.preprocess_modeshape_data import (
@@ -29,6 +33,7 @@ from utils.preprocess_modeshape_data import (
 )
 import utils.get_openmeteo_data as openmeteo
 from handlers.rate_limiter import RateLimiter
+from handlers.safe_unpickle import restricted_loads
 
 # Configuration
 os.environ["SCIPY_ARRAY_API"] = "1"
@@ -161,14 +166,6 @@ class AppHandler(socketio.AsyncNamespace):
         buf.seek(0)
         return buf.read()
 
-    def validate_data(self, sid, data, req_type, req_fields):
-        if not isinstance(data, req_type):
-            return False, "Invalid data format."
-        for f in req_fields:
-            if f not in data:
-                return False, f"Missing field: {f}"
-        return True, None
-
     async def recieve_chunks(self, sid, data):
         name = data["name"]
         if "chunks" not in self.data[sid]: self.data[sid]["chunks"] = {}
@@ -214,9 +211,7 @@ class AppHandler(socketio.AsyncNamespace):
         return cfg
 
     def format_models(self, models):
-        model_names = list(models.keys())
-        model_variable_names = [obj["model"].Q.variable_names() for obj in models.values()]
-        return {model_names[i]: model_variable_names[i] for i in range(len(model_names))}
+        return {name: obj["model"].Q.variable_names() for name, obj in models.items()}
 
     # --- Data Emitters ---
     async def send_model(self, sid):
@@ -231,7 +226,7 @@ class AppHandler(socketio.AsyncNamespace):
         await self.emit("features_stats", m.samples.describe().to_json(), to=sid)
 
     async def send_variableset(self, sid):
-        await self.emit("params", self.format_params(self.data[sid]["variableset"].variables))
+        await self.emit("params", self.format_params(self.data[sid]["variableset"].variables), to=sid)
 
     async def send_multi_measurements(self, sid):
         res = {
@@ -265,7 +260,7 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            model = await asyncio.to_thread(pickle.loads, complete)
+            model = await asyncio.to_thread(restricted_loads, complete)
             self.data[sid].update({
                 "model": model, "variableset": model.Q,
                 "qoi": model.QoI, "sample": model.samples
@@ -275,18 +270,21 @@ class AppHandler(socketio.AsyncNamespace):
             logging.error(f"Load model error: {e}")
             await self.emit("error", f"Load model error: {e}", to=sid)
 
-    async def on_qoi_csv(self, sid, data):
+    async def _load_csv_chunk(self, sid, data, *, store_key, loaded_event, data_event, formatter, error_label):
         try:
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
-            
             df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
-            self.data[sid]["qoi"] = df
-            await self.emit("labels_loaded", {"filename": name}, to=sid)
-            await self.emit("qoi", df.describe().to_json(), to=sid)
+            self.data[sid][store_key] = df
+            await self.emit(loaded_event, {"filename": name}, to=sid)
+            await self.emit(data_event, formatter(df), to=sid)
         except Exception as e:
-            logging.error(f"Load QoI error: {e}")
-            await self.emit("error", f"Load QoI error: {e}", to=sid)
+            await self.emit("error", f"{error_label}: {e}", to=sid)
+
+    async def on_qoi_csv(self, sid, data):
+        await self._load_csv_chunk(sid, data, store_key="qoi", loaded_event="labels_loaded",
+                                    data_event="qoi", formatter=lambda df: df.describe().to_json(),
+                                    error_label="Load QoI error")
 
     async def on_qoi_unv(self, sid, data):
         if "weather_full" not in self.data[sid]:
@@ -343,55 +341,28 @@ class AppHandler(socketio.AsyncNamespace):
                 os.remove(temp_path)
 
     async def on_load_zmean(self, sid, data):
-        try:
-            complete, name = await self.recieve_chunks(sid, data)
-            if not complete: return
-            
-            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
-            self.data[sid]["zmean"] = df
-            await self.emit("zmean_loaded", {"filename": name}, to=sid)
-            await self.emit("zmean", df.to_dict(), to=sid)
-        except Exception as e:
-            await self.emit("error", f"Load Z-mean error: {e}", to=sid)
+        await self._load_csv_chunk(sid, data, store_key="zmean", loaded_event="zmean_loaded",
+                                    data_event="zmean", formatter=lambda df: df.to_dict(),
+                                    error_label="Load Z-mean error")
 
     async def on_load_sigma(self, sid, data):
-        try:
-            complete, name = await self.recieve_chunks(sid, data)
-            if not complete: return
-            
-            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
-            self.data[sid]["sigma"] = df
-            await self.emit("sigma_loaded", {"filename": name}, to=sid)
-            await self.emit("sigma", df.to_dict(), to=sid)
-        except Exception as e:
-            await self.emit("error", f"Load Sigma error: {e}", to=sid)
+        await self._load_csv_chunk(sid, data, store_key="sigma", loaded_event="sigma_loaded",
+                                    data_event="sigma", formatter=lambda df: df.to_dict(),
+                                    error_label="Load Sigma error")
 
     async def on_load_subtract_input(self, sid, data):
-        try:
-            complete, name = await self.recieve_chunks(sid, data)
-            if not complete: return
-            
-            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
-            self.data[sid]["subtract_input"] = df
-            await self.emit("features_loaded", {"filename": name}, to=sid)
-            await self.emit("subtract_input", df.to_dict(), to=sid)
-        except Exception as e:
-            await self.emit("error", f"Load Subtract Input error: {e}", to=sid)
+        await self._load_csv_chunk(sid, data, store_key="subtract_input", loaded_event="features_loaded",
+                                    data_event="subtract_input", formatter=lambda df: df.to_dict(),
+                                    error_label="Load Subtract Input error")
 
     async def on_load_subtract_output(self, sid, data):
-        try:
-            complete, name = await self.recieve_chunks(sid, data)
-            if not complete: return
-            
-            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
-            self.data[sid]["subtract_output"] = df
-            await self.emit("labels_loaded", {"filename": name}, to=sid)
-            await self.emit("subtract_output", df.to_dict(), to=sid)
-        except Exception as e:
-            await self.emit("error", f"Load Subtract Output error: {e}", to=sid)
+        await self._load_csv_chunk(sid, data, store_key="subtract_output", loaded_event="labels_loaded",
+                                    data_event="subtract_output", formatter=lambda df: df.to_dict(),
+                                    error_label="Load Subtract Output error")
 
     async def on_subtract(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             selected_features = data["selected_features"]
             model = self.data[sid]["model"]
             x_train = self.data[sid]["selected_sample"]
@@ -435,6 +406,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_subtracted_plot_scatter(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             subtracted = self.data[sid]["subtracted"]
             param1 = data["param1"]
             param2 = data["param2"]
@@ -455,6 +427,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_threshold_exceed(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             selected_features = data["selected_features"]
             threshold = data.get("threshold", None)
             model = self.data[sid]["model"]
@@ -509,20 +482,90 @@ class AppHandler(socketio.AsyncNamespace):
         await self.emit(
             "reference_stats",
             self.data[sid]["reference_statistics"].to_csv(index=False),
+            to=sid
         )
 
     async def on_save_monitoring_stats(self, sid):
         await self.emit(
             "monitoring_stats",
             self.data[sid]["monitoring_statistics"].to_csv(index=False),
+            to=sid
         )
 
     # --- Core Handlers ---
     async def on_mode(self, sid, mode):
         self.data[sid]["mode"] = mode
 
+    async def on_save_model(self, sid):
+        try:
+            model = self.data[sid]["model"]
+            serialized = model.save_model()
+            await self.emit("save_model", serialized, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error saving model: {str(e)}", to=sid)
+
+    async def on_refresh_variables(self, sid, data):
+        try:
+            variableset = VariableSet()
+            for param in data:
+                name = param["name"]
+                dist_param1 = float(param["distParam1"])
+                dist_param2 = float(param["distParam2"])
+                match param["distribution"]:
+                    case "normal":
+                        dist = NormalDistribution(dist_param1, dist_param2)
+                    case "uniform":
+                        dist = UniformDistribution(dist_param1, dist_param2)
+                    case "logNormal":
+                        dist = LogNormalDistribution(dist_param1, dist_param2)
+                    case "beta":
+                        dist = BetaDistribution(dist_param1, dist_param2)
+                    case "exponential":
+                        dist = ExponentialDistribution(dist_param1)
+                    case _:
+                        raise ValueError(f"Unknown distribution type: {param['distribution']}")
+
+                isTranslated = False
+                if "optional" in param and param["optional"] is not None:
+                    match param["optional"]:
+                        case "bounds":
+                            if (
+                                "minBound" in param
+                                and "maxBound" in param
+                                and param["minBound"] is not None
+                                and param["maxBound"] is not None
+                            ):
+                                minBound = float(param["minBound"])
+                                maxBound = float(param["maxBound"])
+                                dist = dist.fix_bounds(minBound, maxBound)
+                                isTranslated = type(dist) is TranslatedDistribution
+                        case "moments":
+                            if (
+                                "mean" in param
+                                and "var" in param
+                                and param["mean"] is not None
+                                and param["var"] is not None
+                            ):
+                                mean = float(param["mean"])
+                                var = float(param["var"])
+                                dist = dist.fix_moments(mean, var)
+                                isTranslated = type(dist) is TranslatedDistribution
+                if isTranslated:
+                    param["shift"] = dist.get_shift()
+                    param["scale"] = dist.get_scale()
+                else:
+                    param["shift"] = 0
+                    param["scale"] = 1
+                P = Variable(name, dist)
+                variableset.add(P)
+            self.data[sid]["variableset"] = variableset
+            await self.emit("shift_scale", data, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error refreshing variables: {e}", to=sid)
+
     async def on_fetch_weather_data(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             latitude = data["latitude"]
             longitude = data["longitude"]
             start_date = data["start_date"]
@@ -548,6 +591,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_exploratory_plot(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
             fig = plot_correlation(df, self.data[sid]["qoi"], mode=data.get("mode", "input-output"))
             binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
@@ -557,6 +601,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_exploratory_plot_scatter(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
             fig = scatter_plot(df, self.data[sid]["qoi"], data["param1"], data["param2"],
                               hue_col=data.get("hue") if data.get("hue") else None)
@@ -568,6 +613,7 @@ class AppHandler(socketio.AsyncNamespace):
     # --- Training & Analysis Handlers ---
     async def on_train(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             m_cfg = data["modelConfig"]
             m_type = m_cfg["modelType"]
             if not m_type: return
@@ -621,6 +667,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_predict(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             m = self.data[sid]["model"]
             pdf = pd.DataFrame(np.array(data, ndmin=2), columns=m.Q.variable_names())
             await self.emit("predict", m.predict(pdf).tolist(), to=sid)
@@ -629,20 +676,22 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_mean_var(self, sid):
         try:
+            if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             mean, variance = await asyncio.to_thread(model.get_mean_and_var)
-            print(mean, variance)
+            logging.debug(f"mean={mean}, variance={variance}")
             await self.emit(
                 "mean_var", {"mean": mean.tolist(), "variance": variance.tolist()}, to=sid
             )
         except Exception as e:
-            print(f"Error computing mean and variance: {str(e)}")
+            logging.error(f"Error computing mean and variance: {str(e)}")
             await self.emit(
                 "error", f"Error computing mean and variance: {str(e)}", to=sid
             )
     
     async def on_shap_beeswarm(self, sid, param_name):
         try:
+            if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             X_test = pd.DataFrame(self.data[sid]["sample"])
             fig = await model.plot_shap_beeswarm(X_test=X_test, param_name=param_name, silent=True)
@@ -655,37 +704,38 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_waterfall_multi(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             values = data
-            fig = await model.plot_shap_multiple_waterfalls(X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values)
+            fig = await model.plot_shap_multiple_waterfalls(X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, silent=True)
             binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
-            print("Emitting shap_plot_multi")
-            print(binary_data[:100])  # Print the first 100 bytes of the binary data for debugging
             await self.emit("shap_plot_multi", binary_data, to=sid)
         except Exception as e:
-            print(e)
+            logging.error(f"Error generating multiple waterfall plot: {e}")
             await self.emit(
                 "error", f"Error generating multiple waterfall plot: {str(e)}", to=sid
             )
 
     async def on_waterfall_single(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             qoi = data["qoi"]
             values = data["values"]
             fig = await model.plot_shap_single_waterfall(
-                X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, param_name=qoi
+                X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, param_name=qoi, silent=True
             )
             binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit("shap_plot_single", binary_data, to=sid)
         except Exception as e:
-            print(e)
+            logging.error(f"Error generating single waterfall plot: {e}")
             await self.emit(
                 "error", f"Error generating single waterfall plot: {str(e)}", to=sid
             )
 
     async def on_sobol(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             m = self.data[sid]["model"]
             p_var, s_idx = await asyncio.to_thread(m.get_sobol_sensitivity, data)
             self.data[sid].update({"partial_var_df": p_var, "sobol_index_df": s_idx})
@@ -698,6 +748,7 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_sobol_single(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             qoi = data
             if "partial_var_df" not in self.data[sid]:
@@ -717,13 +768,14 @@ class AppHandler(socketio.AsyncNamespace):
             )
             await self.emit("sobol_plot_single", binary_data, to=sid)
         except Exception as e:
-            print(e)
+            logging.error(f"Error computing single Sobol index: {e}")
             await self.emit(
                 "error", f"Error computing single Sobol index: {str(e)}", to=sid
             )
 
     async def on_shap(self, sid):
         try:
+            if not await self._check_rate_limit(sid): return
             m = self.data[sid]["model"]
             df = pd.DataFrame(self.data[sid]["selected_sample"])
             vals = await m.get_shap_values(df, mean=True)
@@ -731,7 +783,12 @@ class AppHandler(socketio.AsyncNamespace):
         except Exception as e:
             await self.emit("error", f"SHAP error: {e}", to=sid)
 
+    async def on_name_pairs(self, sid, data):
+        tuple_list = [tuple(item) for item in data]
+        self.data[sid]["name_pairs"] = tuple_list
+
     async def on_update(self, sid, data):
+        if not await self._check_rate_limit(sid): return
         nwalkers = data["nwalkers"]
         nburn = data["nburn"]
         niter = data["niter"]
@@ -790,22 +847,90 @@ class AppHandler(socketio.AsyncNamespace):
         try:
             retrieved_file, name = await self.recieve_chunks(sid, data)
             if retrieved_file is not None:
-                model = pickle.loads(retrieved_file)
+                model = await asyncio.to_thread(restricted_loads, retrieved_file)
                 if "models" not in self.data[sid]:
                     self.data[sid]["models"] = {}
                 self.data[sid]["models"][name] = {"model": model}
                 await self.emit("models", self.format_models(self.data[sid]["models"]), to=sid)
         except Exception as e:
-            print(f"Error adding model: {e}")
+            logging.error(f"Error adding model: {e}")
             await self.emit("error", f"Error adding model: {str(e)}", to=sid)
+
+    async def on_load_zmean_multi(self, sid, data):
+        try:
+            name = data["name"]
+            model_name = data["model_name"]
+            csv_text = data["data"]
+            self.data[sid]["models"][model_name]["zmean"] = pd.read_csv(io.StringIO(csv_text))
+            await self.send_multi_measurements(sid)
+            await self.emit("zmean_loaded", {"filename": name}, to=sid)
+        except Exception as e:
+            await self.emit(
+                "error", f"Error handling event load_zmean_multi: {str(e)}", to=sid
+            )
+
+    async def on_load_sigma_multi(self, sid, data):
+        try:
+            name = data["name"]
+            model_name = data["model_name"]
+            csv_text = data["data"]
+            self.data[sid]["models"][model_name]["sigma"] = pd.read_csv(io.StringIO(csv_text))
+            await self.send_multi_measurements(sid)
+            await self.emit("sigma_loaded", {"filename": name}, to=sid)
+        except Exception as e:
+            await self.emit(
+                "error", f"Error handling event load_sigma_multi: {str(e)}", to=sid
+            )
 
     async def on_create_joint(self, sid, data):
         try:
+            if not await self._check_rate_limit(sid): return
             models = [obj["model"] for obj in self.data[sid]["models"].values()]
             self.data[sid]["joint_manager"] = JointManager(models, data)
             await self.emit("joint_created", to=sid)
         except Exception as e:
-            print("Error creating joint manager: ", e)
+            logging.error(f"Error creating joint manager: {e}")
+
+    async def on_get_multi_data(self, sid, data):
+        if not await self._check_rate_limit(sid): return
+        index = data["index"]
+        try:
+            joint_manager = self.data[sid]["joint_manager"]
+            if joint_manager is not None:
+                map, means_df, variances_df, posterior_samples = (
+                    joint_manager.get_data_of_model(index)
+                )
+                self.data[sid]["posterior_samples"] = posterior_samples
+                model_names = list(self.data[sid]["models"].keys())
+                figs = utils.plot_multimodel_MCMC(
+                    joint_manager, model_names=model_names
+                )
+                binary_figs = [self.fig_to_binary(fig) for fig in figs]
+                await self.emit(
+                    "update",
+                    {
+                        "mcmc": binary_figs[index],
+                        "mean": means_df.to_dict(),
+                        "variance": variances_df.to_dict(),
+                        "map": map.to_dict(),
+                    },
+                    to=sid,
+                )
+                await self.emit("update_multi", binary_figs, to=sid)
+            else:
+                await self.emit("error", "Joint manager not found", to=sid)
+        except Exception as e:
+            await self.emit("error", str(e), to=sid)
+
+    async def on_update_multi(self, sid, data):
+        try:
+            if not await self._check_rate_limit(sid): return
+            means = [obj["zmean"] for obj in self.data[sid]["models"].values()]
+            sigmas = [obj["sigma"] for obj in self.data[sid]["models"].values()]
+            self.data[sid]["joint_manager"].update(means, sigmas, **data)
+            await self.emit("update_done", to=sid)
+        except Exception as e:
+            await self.emit("error", str(e), to=sid)
 
     # --- Demo Handlers ---
     async def on_data_driven_demo(self, sid):
@@ -895,6 +1020,6 @@ class AppHandler(socketio.AsyncNamespace):
             self.data[sid]["models"]["model2"]["sigma"] = sigma2_df
             await self.send_multi_measurements(sid)
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logging.error(f"Error running multi-model demo: {e}")
             await self.emit("error", str(e), to=sid)
 

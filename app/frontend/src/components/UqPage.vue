@@ -190,10 +190,7 @@
                     </table>
                 </div>
 
-                <div v-if="uqPage.shapPlot" class="plot-container mt-4">
-                    <img class="img-fluid plot-img" :src="uqPage.shapPlot" />
-                </div>
-                <div v-else-if="!hasShapData" class="text-center py-4 text-muted bg-light rounded border border-dashed">
+                <div v-if="!hasShapData" class="text-center py-4 text-muted bg-light rounded border border-dashed">
                     Run SHAP analysis to determine individual parameter contributions.
                 </div>
             </div>
@@ -301,15 +298,9 @@
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td class="fw-bold">Mean Response</td>
-                                            <td class="text-end font-monospace text-primary fw-bold" v-if="uqPage.mean[uqPage.selectedQoI.index]">
-                                                {{ uqPage.mean[uqPage.selectedQoI.index].toFixed(4) }}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td class="fw-bold">Variance</td>
-                                            <td class="text-end font-monospace" v-if="uqPage.variance[uqPage.selectedQoI.index]">
-                                                {{ uqPage.variance[uqPage.selectedQoI.index].toFixed(4) }}
+                                            <td class="fw-bold">Predicted Value</td>
+                                            <td class="text-end font-monospace text-primary fw-bold" v-if="uqPage.prediction[uqPage.selectedQoI.index] !== undefined">
+                                                {{ uqPage.prediction[uqPage.selectedQoI.index].toFixed(4) }}
                                             </td>
                                         </tr>
                                     </tbody>
@@ -478,15 +469,10 @@ export default {
         },
         selectQoI() {
             if (this.validateParmValues()) {
-                this.computePredSingle();
                 this.computeWaterfallSingle();
             } else {
                 this.uqPage.selectedQoI = null;
             }
-        },
-        computePredSingle() {
-            this.setLoading(true);
-            this.socket.emit("predict_single", this.uqPage.selectedQoI.name, this.uqPage.paramValues);
         },
         computeSingle() {
             if (this.validateParmValues()) {

@@ -171,7 +171,7 @@ export default {
             this.refreshParams();
         },
         refreshParams() {
-            this.socket.emit("refresh_params", this.paramPage.data.params);
+            this.socket.emit("refresh_variables", this.paramPage.data.params);
         },
         loadParams(event) {
             const file = event.target.files[0];

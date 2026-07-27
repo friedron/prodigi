@@ -408,6 +408,14 @@ export default {
                 }
             });
         },
+        setImageFromPayload(targetSetter, data) {
+            this.convertToBase64(data)
+                .then((base64Image) => {
+                    targetSetter(base64Image);
+                    this.setLoading(false);
+                })
+                .catch((err) => console.error(err));
+        },
         sendInChunks(file, eventName, socket, args = {}) {
             if (this.uploadInProgress) return;
             this.uploadInProgress = true;
@@ -498,12 +506,6 @@ export default {
             this.addPageDone("surrogate");
             this.addPageDone("upload");
         });
-        socket.on("modes_list", (data) => {
-            this.surrogatePage.modesList = data;
-        });
-        socket.on("effects", (data) => {
-            this.surrogatePage.effectsList = data;
-        });
         socket.on("params", (data) => {
             this.paramPage.data.params = data;
         });
@@ -544,68 +546,23 @@ export default {
             this.setLoading(false);
         });
         socket.on("sobol_plot", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.sobolPlot = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+            this.setImageFromPayload((img) => { this.uqPage.sobolPlot = img; }, data);
         });
         socket.on("sobol_plot_single", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.sobolPlotSingle = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+            this.setImageFromPayload((img) => { this.uqPage.sobolPlotSingle = img; }, data);
         });
         socket.on("shap", (data) => {
             this.uqPage.shap = data;
             this.setLoading(false);
         });
         socket.on("beeswarm_plot", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.beeswarmPlot = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
-        });
-        socket.on("shap_plot", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.shapPlot = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+            this.setImageFromPayload((img) => { this.uqPage.beeswarmPlot = img; }, data);
         });
         socket.on("shap_plot_single", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.shapPlotSingle = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+            this.setImageFromPayload((img) => { this.uqPage.shapPlotSingle = img; }, data);
         });
         socket.on("shap_plot_multi", (data) => {
-            this.convertToBase64(data)
-                .then((base64Image) => {
-                    this.uqPage.shapPlotMulti = base64Image;
-                    this.setLoading(false);
-                })
-                .catch((err) => {
-                    console.error(err);
-                });
+            this.setImageFromPayload((img) => { this.uqPage.shapPlotMulti = img; }, data);
         });
         socket.on("predict", (data) => {
             this.uqPage.prediction = data[0];
@@ -659,12 +616,10 @@ export default {
         });
         socket.on("update", (data) => {
             this.convertToBase64(data["mcmc"])
-                .then((base64Image) => {
-                    this.updatePage.mcmcPlot = base64Image;
+                .then((img) => {
+                    this.updatePage.mcmcPlot = img;
                 })
-                .catch((err) => {
-                    console.error(err);
-                });
+                .catch((err) => console.error(err));
             this.updatePage.mean = data["mean"];
             this.updatePage.variance = data["variance"];
             this.updatePage.map = data["map"];
@@ -694,7 +649,6 @@ export default {
                     this.subtractPage.plot = base64Image;
                 })
                 .catch((err) => {
-                    s;
                     console.error(err);
                 });
             this.subtractPage.errorRatio = data["error_ratio"];

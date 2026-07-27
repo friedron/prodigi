@@ -54,11 +54,6 @@
                         <i v-else class="bi bi-play-circle"></i>
                         {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
-                    <button v-if="mode === 'earthquakeResilience'" class="btn-pro btn-secondary" @click="earthquakeDemo" :disabled="demoLoading">
-                        <span v-if="demoLoading" class="btn-spinner"></span>
-                        <i v-else class="bi bi-play-circle"></i>
-                        {{ demoLoading ? "Loading…" : "Run Demo" }}
-                    </button>
                 </div>
             </div>
         </div>
@@ -170,12 +165,6 @@ export default {
             this.startDemoLoading();
             await this.socket.emit("multi_model_demo");
         },
-        async earthquakeDemo() {
-            this.startDemoLoading();
-            this.$emit("set-loading", true);
-            this.changePage("input");
-            await this.socket.emit("earthquake_demo");
-        }
     },
     mounted() {
         this.stopDemoLoadingOnError = () => { this.demoLoading = false; };

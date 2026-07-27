@@ -209,8 +209,6 @@
                 </div>
             </div>
         </div>
-
-        <NextButton :nextPage="'home'" :available="true" :changePage="changePage" />
     </div>
 </template>
 

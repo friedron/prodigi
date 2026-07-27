@@ -265,6 +265,10 @@ export default {
             this.labels_file = data.filename;
         });
     },
+    beforeUnmount() {
+        this.socket.off("features_loaded");
+        this.socket.off("labels_loaded");
+    },
 };
 </script>
 
