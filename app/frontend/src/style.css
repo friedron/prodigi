@@ -37,6 +37,16 @@
   --font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-size-base: 15px;
   --radius: 8px;
+
+  /* Bootstrap color overrides so its utility classes (text-primary,
+     border-primary, links, icons, etc.) follow the burgundy theme
+     instead of Bootstrap's default blue */
+  --bs-primary: var(--primary);
+  --bs-primary-rgb: 163, 0, 54;
+  --bs-link-color: var(--primary);
+  --bs-link-color-rgb: 163, 0, 54;
+  --bs-link-hover-color: var(--primary-hover);
+  --bs-link-hover-color-rgb: 130, 0, 43;
 }
 
 * {
@@ -66,6 +76,19 @@ a {
 
 a:hover {
   color: var(--primary-hover);
+}
+
+/* Bootstrap's .btn-primary hardcodes its blue rather than reading
+   --bs-primary, so it needs an explicit override to match the theme */
+.btn-primary {
+  --bs-btn-bg: var(--primary);
+  --bs-btn-border-color: var(--primary);
+  --bs-btn-hover-bg: var(--primary-hover);
+  --bs-btn-hover-border-color: var(--primary-hover);
+  --bs-btn-active-bg: var(--primary-hover);
+  --bs-btn-active-border-color: var(--primary-hover);
+  --bs-btn-disabled-bg: var(--primary);
+  --bs-btn-disabled-border-color: var(--primary);
 }
 
 /* Professional Button System */

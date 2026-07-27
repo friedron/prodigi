@@ -2,12 +2,11 @@
     <div class="compare-measurement-page container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
-                :logos="[
-                    { src: '/static/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UGR_logo.PNG', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UL_logo.png', alt: 'Uni Logo' },
-                ]"
-            />
+            :logos="[
+                { src: '/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
+                { src: '/logos/hs_logo.png', alt: 'HS Logo' },
+            ]"
+        />
         </div>
 
         <BackButton :prevPage="'measurements'" :changePage="changePage" />

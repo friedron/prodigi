@@ -236,8 +236,10 @@
             </div>
 
             <div class="mt-4 pt-3 border-top d-flex justify-content-center">
-                <button class="btn-pro px-5" @click="train">
-                    <i class="bi bi-lightning-fill"></i> Train Model
+                <button class="btn-pro px-5" @click="train" :disabled="isTraining">
+                    <span v-if="isTraining" class="btn-spinner"></span>
+                    <i v-else class="bi bi-lightning-fill"></i>
+                    {{ isTraining ? "Training…" : "Train Model" }}
                 </button>
             </div>
         </div>
@@ -258,11 +260,7 @@
                 <div class="col-md-12 d-flex justify-content-end mb-3">
                     <OutputLoader 
                         :title="'Save Model'" 
-                        :dkgApiStatus="dkgApiStatus" 
-                        :socket="socket" 
                         @save-file="saveModel" 
-                        :mode="mode === 'surrogate' ? 'sm' : 'ddpm'" 
-                        :dkgToken="dkgToken"
                     />
                 </div>
 
@@ -350,8 +348,6 @@ export default {
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
-        dkgApiStatus: { type: String, required: true },
-        dkgToken: { type: String, required: true },
     },
     data() {
         return {
@@ -359,6 +355,7 @@ export default {
             selectedLayer: null,
             selectedFeats: this.paramPage.data.params.map(p => p.name),
             selectedLabels: this.paramPage.qoiTable ? Object.keys(this.paramPage.qoiTable) : [],
+            isTraining: false,
         };
     },
     watch: {
@@ -436,16 +433,29 @@ export default {
                 return;
             }
             const { splitConfig, modelConfig } = this.surrogatePage;
-            this.socket.emit("train", { 
-                splitConfig, 
-                modelConfig, 
-                selectedFeats: this.selectedFeats, 
-                selectedLabels: this.selectedLabels 
+            this.isTraining = true;
+            this.socket.emit("train", {
+                splitConfig,
+                modelConfig,
+                selectedFeats: this.selectedFeats,
+                selectedLabels: this.selectedLabels
             });
         },
         saveModel() {
             this.socket.emit("save_model");
         },
+    },
+    mounted() {
+        // The backend always emits train_result (either "Done" or an
+        // "Error: ..." message) as the last step of training, whether it
+        // succeeds or fails, so it's a reliable point to clear the spinner.
+        this._trainResultHandler = () => {
+            this.isTraining = false;
+        };
+        this.socket.on("train_result", this._trainResultHandler);
+    },
+    beforeUnmount() {
+        this.socket.off("train_result", this._trainResultHandler);
     },
     computed: {
         computeNumOfLeaves() {
@@ -537,5 +547,19 @@ export default {
 
 .border-primary {
     border-top: 4px solid var(--primary) !important;
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

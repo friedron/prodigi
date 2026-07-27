@@ -25,7 +25,7 @@
                     <div class="upload-zone p-3 border rounded bg-light">
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <span class="fw-bold">Input Features (.csv)</span>
-                            <InputLoaderExtended :dkgApiStatus="dkgApiStatus" :socket="socket" @load-file="loadInput" :dkgToken="dkgToken"/>
+                            <InputLoaderExtended :socket="socket" @load-file="loadInput" />
                         </div>
                         <div v-if="features_file" class="small text-success d-flex align-items-center">
                             <i class="bi bi-check-circle-fill me-1"></i> Loaded: {{ features_file }}
@@ -37,12 +37,10 @@
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <span class="fw-bold">Output QoI (.csv, .unv)</span>
                             <InputLoader
-                                :dkgApiStatus="dkgApiStatus"
                                 :socket="socket"
                                 @load-file="loadOutput"
                                 :fileType="'.csv, .unv'"
                                 :loadType="'labels'"
-                                :dkgToken="dkgToken"
                             />
                         </div>
                         <div v-if="labels_file" class="small text-success d-flex align-items-center">
@@ -170,8 +168,6 @@
             :available="Object.keys(paramPage.inputStats).length > 0 && Object.keys(paramPage.qoiTable).length > 0"
             :changePage="changePage"
         />
-
-        <ModeshapeDefiner v-if="modeshape_definer" @finalize="onModeshapeFinalized" />
     </div>
 </template>
 
@@ -182,7 +178,6 @@ import BackButton from "../BackButton.vue";
 import LogoLine from "../LogoLine.vue";
 import InputLoader from "../InputLoader.vue";
 import InputLoaderExtended from "../InputLoaderExtended.vue";
-import ModeshapeDefiner from "../ModeshapeDefiner.vue";
 
 export default {
     components: {
@@ -192,7 +187,6 @@ export default {
         LogoLine,
         InputLoader,
         InputLoaderExtended,
-        ModeshapeDefiner,
     },
     props: {
         socket: { type: Object, required: true },
@@ -200,8 +194,6 @@ export default {
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
-        dkgApiStatus: { type: String, required: true },
-        dkgToken: { type: String, required: true },
     },
     data() {
         return {
@@ -209,7 +201,6 @@ export default {
             selectedParam: null,
             features_file: null,
             labels_file: null,
-            modeshape_definer: false,
             file : null
         };
     },
@@ -217,9 +208,9 @@ export default {
         paramPage: {
             handler(newVal) {
                 if (
-                    newVal.samples.length > 0 &&
+                    newVal.samples?.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
-                    newVal.data.params.length > 0
+                    newVal.data?.params?.length > 0
                 ) {
                     this.addPageDone("params");
                 }
@@ -242,17 +233,13 @@ export default {
             this.file = file;
             const fileExtension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
             if (fileExtension === ".unv") {
-                this.modeshape_definer = true;
+                this.sendInChunks(file, "qoi_unv", this.socket);
                 return;
             }
             if (fileExtension === ".csv") {
                 this.sendInChunks(file, "qoi_csv", this.socket);
                 return;
             }
-        },
-        onModeshapeFinalized(cols) {
-            this.sendInChunks(this.file, "qoi_unv", this.socket, { modeshape_cols: cols });
-            this.modeshape_definer = false;
         },
         saveParams() {
             try {

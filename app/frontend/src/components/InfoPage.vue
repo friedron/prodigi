@@ -39,17 +39,25 @@
                 </template>
 
                 <div class="ms-auto d-flex gap-2">
-                    <button v-if="mode === 'subtracting'" class="btn-pro btn-secondary" @click="subtractingDemo">
-                        <i class="bi bi-play-circle"></i> Run Demo
+                    <button v-if="mode === 'subtracting'" class="btn-pro btn-secondary" @click="subtractingDemo" :disabled="demoLoading">
+                        <span v-if="demoLoading" class="btn-spinner"></span>
+                        <i v-else class="bi bi-play-circle"></i>
+                        {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
-                    <button v-if="mode === 'surrogate'" class="btn-pro btn-secondary" @click="hybridDemo">
-                        <i class="bi bi-play-circle"></i> Run Demo
+                    <button v-if="mode === 'surrogate'" class="btn-pro btn-secondary" @click="hybridDemo" :disabled="demoLoading">
+                        <span v-if="demoLoading" class="btn-spinner"></span>
+                        <i v-else class="bi bi-play-circle"></i>
+                        {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
-                    <button v-if="mode === 'multiModel'" class="btn-pro btn-secondary" @click="multiModelDemo">
-                        <i class="bi bi-play-circle"></i> Run Demo
+                    <button v-if="mode === 'multiModel'" class="btn-pro btn-secondary" @click="multiModelDemo" :disabled="demoLoading">
+                        <span v-if="demoLoading" class="btn-spinner"></span>
+                        <i v-else class="bi bi-play-circle"></i>
+                        {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
-                    <button v-if="mode === 'earthquakeResilience'" class="btn-pro btn-secondary" @click="earthquakeDemo">
-                        <i class="bi bi-play-circle"></i> Run Demo
+                    <button v-if="mode === 'earthquakeResilience'" class="btn-pro btn-secondary" @click="earthquakeDemo" :disabled="demoLoading">
+                        <span v-if="demoLoading" class="btn-spinner"></span>
+                        <i v-else class="bi bi-play-circle"></i>
+                        {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
                 </div>
             </div>
@@ -59,6 +67,10 @@
 
 <script>
 import LogoLine from "./LogoLine.vue";
+
+// How long to keep the demo button's own spinner up after the last
+// demo-related socket event, independent of the app-wide activity indicator.
+const DEMO_DEBOUNCE_MS = 1500;
 
 export default {
     components: { LogoLine },
@@ -70,6 +82,7 @@ export default {
     },
     data() {
         return {
+            demoLoading: false,
             titles: {
                 subtracting: "Subtracting Weather Effects",
                 surrogate: "Hybrid Digital Twinning",
@@ -131,14 +144,48 @@ export default {
             const file = this.mode === "earthquakeResilience" ? "./EPUSH_paper.pdf" : "./climate_paper.pdf";
             window.open(file, "_blank");
         },
-        async subtractingDemo() { await this.socket.emit("data_driven_demo"); },
-        async hybridDemo() { await this.socket.emit("hybrid_demo"); },
-        async multiModelDemo() { await this.socket.emit("multi_model_demo"); },
+        startDemoLoading() {
+            this.demoLoading = true;
+            clearTimeout(this._demoHideTimer);
+            this._demoHideTimer = setTimeout(() => {
+                this.demoLoading = false;
+            }, DEMO_DEBOUNCE_MS);
+        },
+        onDemoSocketActivity() {
+            if (!this.demoLoading) return;
+            clearTimeout(this._demoHideTimer);
+            this._demoHideTimer = setTimeout(() => {
+                this.demoLoading = false;
+            }, DEMO_DEBOUNCE_MS);
+        },
+        async subtractingDemo() {
+            this.startDemoLoading();
+            await this.socket.emit("data_driven_demo");
+        },
+        async hybridDemo() {
+            this.startDemoLoading();
+            await this.socket.emit("hybrid_demo");
+        },
+        async multiModelDemo() {
+            this.startDemoLoading();
+            await this.socket.emit("multi_model_demo");
+        },
         async earthquakeDemo() {
+            this.startDemoLoading();
             this.$emit("set-loading", true);
             this.changePage("input");
             await this.socket.emit("earthquake_demo");
         }
+    },
+    mounted() {
+        this.stopDemoLoadingOnError = () => { this.demoLoading = false; };
+        this.socket.onAny(this.onDemoSocketActivity);
+        this.socket.on("error", this.stopDemoLoadingOnError);
+    },
+    beforeUnmount() {
+        clearTimeout(this._demoHideTimer);
+        this.socket.offAny(this.onDemoSocketActivity);
+        this.socket.off("error", this.stopDemoLoadingOnError);
     }
 };
 </script>
@@ -186,5 +233,19 @@ export default {
 .btn-secondary:hover {
     background-color: #e2e6ea;
     border-color: #dae0e5;
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

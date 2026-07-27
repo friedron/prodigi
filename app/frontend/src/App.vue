@@ -17,10 +17,12 @@ import SampleQoIPage from "./components/surrogate/SampleQoIPage.vue";
 import CompareMeasurement from "./components/CompareMeasurement.vue";
 import Exploratory from "./components/subtracting/Exploratory.vue";
 import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vue";
+import LoadingIndicator from "./components/LoadingIndicator.vue";
 </script>
 <template>
     <div class="app-container" :class="{ loading: isLoading }">
         <div class="app-background"></div>
+        <LoadingIndicator />
         <LogoBar></LogoBar>
         <Sidebar
             :mode="mode"
@@ -52,9 +54,7 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :socket="socket"
                 :addPageDone="addPageDone"
                 :changePage="changePage"
-                :dkgApiStatus="dkgApiStatus"
                 :sendInChunks="sendInChunks"
-                :dkgToken="dkgToken"
             />
             <ParamPage
                 v-if="activePage === 'params' && mode === 'surrogate'"
@@ -79,8 +79,6 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :changePage="changePage"
                 :addPageDone="addPageDone"
                 :sendInChunks="sendInChunks"
-                :dkgApiStatus="dkgApiStatus"
-                :dkgToken="dkgToken"
             />
             <Exploratory
                 v-if="activePage === 'exploratory'"
@@ -97,8 +95,6 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
-                :dkgApiStatus="dkgApiStatus"
-                :dkgToken="dkgToken"
             />
             <UqPage
                 v-if="activePage === 'uq'"
@@ -108,6 +104,7 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :mode="mode"
                 :socket="socket"
                 :changePage="changePage"
+                :isLoading="isLoading"
                 @set-loading="setLoading"
             />
             <SubtractEffects
@@ -117,10 +114,8 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :surrogatePage="surrogatePage"
                 :socket="socket"
                 :changePage="changePage"
-                :dkgApiStatus="dkgApiStatus"
                 @set-loading="setLoading"
                 :convertToBase64="convertToBase64"
-                :dkgToken="dkgToken"
             />
             <ThresholdExceedance
                 v-if="activePage === 'thresholdExceedance'"
@@ -129,9 +124,7 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :socket="socket"
                 :changePage="changePage"
                 :sendInChunks="sendInChunks"
-                :dkgApiStatus="dkgApiStatus"
                 @set-loading="setLoading"
-                :dkgToken="dkgToken"
             />
             <MeasurementsPage
                 v-if="activePage === 'measurements' && mode !== 'multiModel'"
@@ -141,8 +134,6 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :changePage="changePage"
                 :addPageDone="addPageDone"
                 :sendInChunks="sendInChunks"
-                :dkgApiStatus="dkgApiStatus"
-                :dkgToken="dkgToken"
             />
             <MeasurementsPageMulti
                 v-if="activePage === 'measurements' && mode === 'multiModel'"
@@ -152,8 +143,6 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
-                :dkgApiStatus="dkgApiStatus"
-                :dkgToken="dkgToken"
             />
             <CompareMeasurement
                 v-if="activePage === 'compare'"
@@ -172,8 +161,7 @@ import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vu
                 :mode="mode"
                 :socket="socket"
                 :changePage="changePage"
-                :dkgApiStatus="dkgApiStatus"
-                :dkgToken="dkgToken"
+                :isLoading="isLoading"
                 @set-loading="setLoading"
             />
         </div>
@@ -238,8 +226,6 @@ export default {
                 completedPages: [],
                 pendingMode: null,
                 showConfirm: false,
-                dkgApiStatus: "error",
-                dkgToken: "",
                 uploadPage: {
                     models: [],
                     jointCreated: false,
@@ -339,7 +325,7 @@ export default {
                 subtractPage: {
                     input: {},
                     output: {},
-                    threshold: null,
+                    threshold: 0.1,
                     selectedFeatures: [],
                     problematicRows: null,
                     errorRatio: null,
@@ -502,7 +488,7 @@ export default {
         }
         socket.on("load_model", (data) => {
             const { params, modelConfig } = data;
-            this.paramPage.data.params = params;
+            this.paramPage.data.params = Array.isArray(params) ? params : [];
             for (let param of this.paramPage.data.params) {
                 param["id"] = this.generateId();
             }

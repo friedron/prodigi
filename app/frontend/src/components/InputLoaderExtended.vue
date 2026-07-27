@@ -51,12 +51,10 @@
               <div v-if="selectedOption === 'fileApi'">
                 <InputLoader
                   :socket="socket"
-                  :dkgApiStatus="dkgApiStatus"
                   fileType=".csv"
                   loadType="features"
                   @load-file="$emit('load-file', $event)"
                   @close="closeModal"
-                  :dkgToken="dkgToken"
                 />
               </div>
             </div>
@@ -80,8 +78,6 @@ export default {
   components: { WeatherApi, InputLoader },
   props: {
     socket: { type: Object, required: true },
-    dkgApiStatus: { type: String, required: true },
-    dkgToken: { type: String, required: true },
   },
   emits: ['load-file'],
   data() {

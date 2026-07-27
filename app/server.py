@@ -1,4 +1,6 @@
 import uuid
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive, thread-safe backend; must be set before pyplot is imported anywhere (plots now render off the main thread via asyncio.to_thread)
 import socketio
 import tornado
 import argparse

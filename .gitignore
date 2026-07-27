@@ -25,6 +25,7 @@ pnpm-lock.yaml
 dist/
 dist-ssr/
 app/frontend/dist/
+app/static/
 *.local
 
 # Vite/Vue specifics
@@ -36,6 +37,9 @@ skills
 
 # Project specific
 GEMINI.md
+CLAUDE.md
+skills-lock.json
+.cache.sqlite
 
 # Editor directories and files
 .idea/

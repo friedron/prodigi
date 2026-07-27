@@ -1,4 +1,4 @@
-import base64
+import asyncio
 import io
 import json
 import logging
@@ -7,9 +7,7 @@ import pickle
 import tempfile
 import time
 import uuid
-from io import BytesIO, StringIO
-
-import httpx
+import functools
 import pandas as pd
 import numpy as np
 import socketio
@@ -17,24 +15,17 @@ import tornado
 from tornado.ioloop import PeriodicCallback
 
 # Science & Engineering imports
-import ifcopenshell
-import bimquake
 import plotly.io as pio
-import matplotlib.pyplot as plt
 
 # Installed packages
 from digital_twinning import PredictiveModel, DigitalTwin, JointManager, utils
-from uncertain_variables.distributions import (
-    NormalDistribution, UniformDistribution, LogNormalDistribution,
-    BetaDistribution, ExponentialDistribution, TranslatedDistribution
-)
-from uncertain_variables.variable_set import VariableSet
-from uncertain_variables.variable import Variable
+from digital_twinning.unv_example_functions import preprocess_modeshape_data as ppm
+from digital_twinning.utils.object_utils import generate_stdrn_simparamset
 
 # Local library imports
 from utils.preprocess_modeshape_data import (
-    plot_correlation, preprocess_weather_df,
-    scatter_plot, 
+    plot_correlation,
+    scatter_plot,
 )
 import utils.get_openmeteo_data as openmeteo
 from handlers.rate_limiter import RateLimiter
@@ -130,7 +121,7 @@ class AppHandler(socketio.AsyncNamespace):
         # Restore stateful components
         if d.get("mode"): await self.emit("mode", d["mode"], to=sid)
         if d.get("model"): await self.send_model(sid)
-        if d.get("paramset"): await self.send_paramset(sid)
+        if d.get("variableset"): await self.send_variableset(sid)
         if d.get("zmean"): await self.emit("zmean", d["zmean"].to_dict(), to=sid)
         if d.get("sigma"): await self.emit("sigma", d["sigma"].to_dict(), to=sid)
         if d.get("subtract_input"): await self.emit("subtract_input", d["subtract_input"].to_dict(), to=sid)
@@ -223,7 +214,9 @@ class AppHandler(socketio.AsyncNamespace):
         return cfg
 
     def format_models(self, models):
-        return {name: obj["model"].Q.param_names() for name, obj in models.items()}
+        model_names = list(models.keys())
+        model_variable_names = [obj["model"].Q.variable_names() for obj in models.values()]
+        return {model_names[i]: model_variable_names[i] for i in range(len(model_names))}
 
     # --- Data Emitters ---
     async def send_model(self, sid):
@@ -235,9 +228,10 @@ class AppHandler(socketio.AsyncNamespace):
             "modelConfig": self.format_model_config(m)
         }, to=sid)
         await self.emit("qoi", m.QoI.describe().to_json(), to=sid)
+        await self.emit("features_stats", m.samples.describe().to_json(), to=sid)
 
-    async def send_paramset(self, sid):
-        await self.emit("params", self.format_params(self.data[sid]["paramset"].variables))
+    async def send_variableset(self, sid):
+        await self.emit("params", self.format_params(self.data[sid]["variableset"].variables))
 
     async def send_multi_measurements(self, sid):
         res = {
@@ -254,14 +248,14 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete))
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["sample"] = df
-            self.data[sid]["paramset"] = utils.get_simparamset_from_data(df)
+            self.data[sid]["variableset"] = utils.get_variableset_from_data(df)
             
             await self.emit("features_loaded", {"filename": name}, to=sid)
             await self.emit("sample", df.to_numpy().tolist(), to=sid)
             await self.emit("features_stats", df.describe().to_json(), to=sid)
-            await self.send_paramset(sid)
+            await self.send_variableset(sid)
         except Exception as e:
             logging.error(f"Load features error: {e}")
             await self.emit("error", f"Load features error: {e}", to=sid)
@@ -271,9 +265,9 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            model = pickle.loads(complete)
+            model = await asyncio.to_thread(pickle.loads, complete)
             self.data[sid].update({
-                "model": model, "paramset": model.Q, 
+                "model": model, "variableset": model.Q,
                 "qoi": model.QoI, "sample": model.samples
             })
             await self.send_model(sid)
@@ -286,7 +280,7 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete))
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["qoi"] = df
             await self.emit("labels_loaded", {"filename": name}, to=sid)
             await self.emit("qoi", df.describe().to_json(), to=sid)
@@ -294,12 +288,66 @@ class AppHandler(socketio.AsyncNamespace):
             logging.error(f"Load QoI error: {e}")
             await self.emit("error", f"Load QoI error: {e}", to=sid)
 
+    async def on_qoi_unv(self, sid, data):
+        if "weather_full" not in self.data[sid]:
+            await self.emit("error", "Please load weather data first", to=sid)
+            return
+        try:
+            fd, temp_path = tempfile.mkstemp(suffix=".unv")
+            retrieved_file, filename, = await self.recieve_chunks(sid, data)
+            if retrieved_file is not None:
+                with os.fdopen(fd, 'wb') as tmp:
+                    tmp.write(retrieved_file)
+
+                def _process_unv(path, weather_full, x_cols):
+                    df = ppm.df_from_unv(path)
+                    modeshapes_df = ppm.merge_dataframes(df, weather_full)
+                    modes = sorted(df['mode_id'].unique().tolist())
+                    modeshapes_dict = ppm.separate__and_flip_modes(modeshapes_df)
+                    modeshapes_df = ppm.merge_modes(modeshapes_dict)
+
+                    # Only prune constant *target* columns (frequency/modeshapes) -
+                    # weather predictor columns must survive even if constant over this window.
+                    protected_cols = [c for c in modeshapes_df.columns if c in x_cols or c in ('Datetime', 'mode_id')]
+                    reduced = ppm.remove_constant_columns(modeshapes_df.drop(columns=protected_cols))
+                    modeshapes_df = pd.concat([modeshapes_df[protected_cols], reduced], axis=1)
+
+                    # select_cols builds a UniformDistribution(min, max) per x_col, which
+                    # requires min != max - drop weather columns that are constant over
+                    # this UNV's time window since they carry no information anyway.
+                    x_cols = [c for c in x_cols if modeshapes_df[c].min() != modeshapes_df[c].max()]
+
+                    y_cols = 'frequency+modeshapes'
+                    X, y, _, _ = ppm.select_cols(modeshapes_df, modes, x_cols, y_cols)
+                    mask = y.notna().all(axis=1)
+                    y = y[mask]
+                    X = X.loc[mask]
+                    return X, y
+
+                X, y = await asyncio.to_thread(
+                    _process_unv,
+                    temp_path,
+                    self.data[sid]["weather_full"],
+                    self.data[sid]["sample"].columns.tolist(),
+                )
+                self.data[sid]["sample"] = X
+                self.data[sid]["qoi"] = y
+                await self.emit(
+                    "qoi", self.data[sid]["qoi"].describe().to_json(), to=sid
+                )
+                await self.emit("labels_loaded", {"filename": filename}, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error handling event load_unv: {str(e)}", to=sid)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
     async def on_load_zmean(self, sid, data):
         try:
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete), index_index=0)
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["zmean"] = df
             await self.emit("zmean_loaded", {"filename": name}, to=sid)
             await self.emit("zmean", df.to_dict(), to=sid)
@@ -311,7 +359,7 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete), index_index=0)
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["sigma"] = df
             await self.emit("sigma_loaded", {"filename": name}, to=sid)
             await self.emit("sigma", df.to_dict(), to=sid)
@@ -323,7 +371,7 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete))
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["subtract_input"] = df
             await self.emit("features_loaded", {"filename": name}, to=sid)
             await self.emit("subtract_input", df.to_dict(), to=sid)
@@ -335,7 +383,7 @@ class AppHandler(socketio.AsyncNamespace):
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
             
-            df = pd.read_csv(io.BytesIO(complete))
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
             self.data[sid]["subtract_output"] = df
             await self.emit("labels_loaded", {"filename": name}, to=sid)
             await self.emit("subtract_output", df.to_dict(), to=sid)
@@ -393,14 +441,14 @@ class AppHandler(socketio.AsyncNamespace):
             fig = scatter_plot(
                 pd.DataFrame(
                     self.data[sid]["selected_sample"],
-                    columns=self.data[sid]["model"].Q.param_names(),
+                    columns=self.data[sid]["model"].Q.variable_names(),
                 ),
                 self.data[sid]["subtracted"],
                 param1,
                 param2,
                 hue_col=data["hue"] if "hue" in data and data["hue"] != "" else None,
             )
-            binary_fig = self.fig_to_binary(fig)
+            binary_fig = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit("subtracted_plot_scatter", binary_fig, to=sid)
         except Exception as e:
             await self.emit("error", str(e), to=sid)
@@ -431,7 +479,7 @@ class AppHandler(socketio.AsyncNamespace):
             self.data[sid]["remained_effects"] = remained_effects_df
             self.data[sid]["reference_statistics"] = reference_statistics
             self.data[sid]["monitoring_statistics"] = monitoring_statistics
-            binary_data = self.fig_to_binary(fig)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit(
                 "subtract_data",
                 {
@@ -475,38 +523,47 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_fetch_weather_data(self, sid, data):
         try:
-            raw = openmeteo.get_openmeteo_data(
-                data["latitude"], data["longitude"], 
-                data["start_date"], data["end_date"], data["features"]
+            latitude = data["latitude"]
+            longitude = data["longitude"]
+            start_date = data["start_date"]
+            end_date = data["end_date"]
+            features = data["features"]
+            data = openmeteo.get_openmeteo_data(
+                latitude, longitude, start_date, end_date, features
             )
-            processed = preprocess_weather_df(raw)
+            processed = ppm.preprocess_weather_df(data)
             self.data[sid]["weather_full"] = processed
-            
             export_df = processed.copy()
             if "Datetime" in export_df.columns:
                 export_df["Datetime"] = export_df["Datetime"].dt.strftime('%Y-%m-%d %H:%M:%S')
-            
-            num_only = processed.drop(columns=["Datetime"], errors="ignore").astype(float)
-            self.data[sid]["sample"] = num_only
-            self.data[sid]["paramset"] = utils.get_simparamset_from_data(num_only)
-            
+            numeric_only = processed.drop(columns=["Datetime"]).astype(float)
+            self.data[sid]["sample"] = numeric_only
+            self.data[sid]["variableset"] = utils.get_variableset_from_data(numeric_only)
             await self.emit("sample", export_df.values.tolist(), to=sid)
-            await self.emit("features_stats", num_only.describe().to_json(), to=sid)
+            await self.emit("features_stats", numeric_only.describe().to_json(), to=sid)
             await self.emit("features_loaded", {"filename": "Weather Data"}, to=sid)
-            await self.send_paramset(sid)
+            await self.send_variableset(sid)
         except Exception as e:
-            await self.emit("error", f"Weather data error: {e}", to=sid)
+            await self.emit("error", f"Error fetching weather data: {str(e)}", to=sid)
 
     async def on_exploratory_plot(self, sid, data):
-        df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["paramset"].param_names())
-        fig = plot_correlation(df, self.data[sid]["qoi"], mode=data.get("mode", "input-output"))
-        await self.emit("exploratory_plot", self.fig_to_binary(fig), to=sid)
+        try:
+            df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
+            fig = plot_correlation(df, self.data[sid]["qoi"], mode=data.get("mode", "input-output"))
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            await self.emit("exploratory_plot", binary_data, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error generating correlation plot: {str(e)}", to=sid)
 
     async def on_exploratory_plot_scatter(self, sid, data):
-        df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["paramset"].param_names())
-        fig = scatter_plot(df, self.data[sid]["qoi"], data["param1"], data["param2"], 
-                          hue_col=data.get("hue") if data.get("hue") else None)
-        await self.emit("exploratory_plot_scatter", self.fig_to_binary(fig), to=sid)
+        try:
+            df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
+            fig = scatter_plot(df, self.data[sid]["qoi"], data["param1"], data["param2"],
+                              hue_col=data.get("hue") if data.get("hue") else None)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            await self.emit("exploratory_plot_scatter", binary_data, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error generating scatter plot: {str(e)}", to=sid)
 
     # --- Training & Analysis Handlers ---
     async def on_train(self, sid, data):
@@ -521,16 +578,16 @@ class AppHandler(socketio.AsyncNamespace):
             x_data = self.data[sid]["sample"][s_feats]
             y_data = self.data[sid]["qoi"][s_labels]
             
-            paramset = utils.get_simparamset_from_data(x_data)
-            self.data[sid].update({"selected_sample": x_data, "selected_qoi": y_data, "filtered_paramset": paramset})
-            
+            variableset = utils.get_variableset_from_data(x_data)
+            self.data[sid].update({"selected_sample": x_data, "selected_qoi": y_data, "filtered_variableset": variableset})
+
             model = None
             if m_type == "gPCE":
                 p = int(m_cfg["gpcConfig"]["initConfig"]["p"])
-                model = PredictiveModel(paramset, s_labels, m_type, p=p)
+                model = PredictiveModel(variableset, s_labels, m_type, p=p)
                 t_cfg = m_cfg["gpcConfig"]["trainConfig"]
             elif m_type == "GBT":
-                model = PredictiveModel(paramset, s_labels, m_type, **m_cfg["gbtConfig"]["initConfig"])
+                model = PredictiveModel(variableset, s_labels, m_type, **m_cfg["gbtConfig"]["initConfig"])
                 t_cfg = m_cfg["gbtConfig"]["trainConfig"]
             elif m_type == "DNN":
                 init = {
@@ -539,10 +596,10 @@ class AppHandler(socketio.AsyncNamespace):
                     } for l in m_cfg["nnConfig"]["initConfig"]["layers"]],
                     "outputAF": m_cfg["nnConfig"]["initConfig"]["outputAF"]
                 }
-                model = PredictiveModel(paramset, s_labels, m_type, **init)
+                model = PredictiveModel(variableset, s_labels, m_type, **init)
                 t_cfg = m_cfg["nnConfig"]["trainConfig"]
             elif m_type == "LinReg":
-                model = PredictiveModel(paramset, s_labels, m_type)
+                model = PredictiveModel(variableset, s_labels, m_type)
                 t_cfg = {}
 
             if model:
@@ -552,8 +609,8 @@ class AppHandler(socketio.AsyncNamespace):
                     random_seed=data["splitConfig"]["seed"],
                     split_type=data["splitConfig"]["trainTestSplit"]
                 )
-                model.train(x_t, y_t, t_cfg)
-                ind_m, over_m = model.evaluate_model(y_t, x_v, y_v)
+                await asyncio.to_thread(model.train, x_t, y_t, t_cfg)
+                ind_m, over_m = await asyncio.to_thread(model.evaluate_model, y_t, x_v, y_v)
                 self.data[sid]["model"] = model
                 await self.emit("outputQoi", y_t.columns.tolist(), to=sid)
                 await self.emit("train_result", "Done", to=sid)
@@ -565,7 +622,7 @@ class AppHandler(socketio.AsyncNamespace):
     async def on_predict(self, sid, data):
         try:
             m = self.data[sid]["model"]
-            pdf = pd.DataFrame(np.array(data, ndmin=2), columns=m.Q.param_names())
+            pdf = pd.DataFrame(np.array(data, ndmin=2), columns=m.Q.variable_names())
             await self.emit("predict", m.predict(pdf).tolist(), to=sid)
         except Exception as e:
             await self.emit("error", f"Prediction error: {e}", to=sid)
@@ -573,7 +630,7 @@ class AppHandler(socketio.AsyncNamespace):
     async def on_mean_var(self, sid):
         try:
             model = self.data[sid]["model"]
-            mean, variance = model.get_mean_and_var()
+            mean, variance = await asyncio.to_thread(model.get_mean_and_var)
             print(mean, variance)
             await self.emit(
                 "mean_var", {"mean": mean.tolist(), "variance": variance.tolist()}, to=sid
@@ -588,8 +645,8 @@ class AppHandler(socketio.AsyncNamespace):
         try:
             model = self.data[sid]["model"]
             X_test = pd.DataFrame(self.data[sid]["sample"])
-            fig = await model.plot_shap_beeswarm(X_test=X_test, param_name=param_name)
-            binary_data = self.fig_to_binary(fig)
+            fig = await model.plot_shap_beeswarm(X_test=X_test, param_name=param_name, silent=True)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit("beeswarm_plot", binary_data, to=sid)
         except Exception as e:
             await self.emit(
@@ -601,7 +658,7 @@ class AppHandler(socketio.AsyncNamespace):
             model = self.data[sid]["model"]
             values = data
             fig = await model.plot_shap_multiple_waterfalls(X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values)
-            binary_data = self.fig_to_binary(fig)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             print("Emitting shap_plot_multi")
             print(binary_data[:100])  # Print the first 100 bytes of the binary data for debugging
             await self.emit("shap_plot_multi", binary_data, to=sid)
@@ -619,7 +676,7 @@ class AppHandler(socketio.AsyncNamespace):
             fig = await model.plot_shap_single_waterfall(
                 X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, param_name=qoi
             )
-            binary_data = self.fig_to_binary(fig)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit("shap_plot_single", binary_data, to=sid)
         except Exception as e:
             print(e)
@@ -630,11 +687,12 @@ class AppHandler(socketio.AsyncNamespace):
     async def on_sobol(self, sid, data):
         try:
             m = self.data[sid]["model"]
-            p_var, s_idx = m.get_sobol_sensitivity(data)
+            p_var, s_idx = await asyncio.to_thread(m.get_sobol_sensitivity, data)
             self.data[sid].update({"partial_var_df": p_var, "sobol_index_df": s_idx})
-            fig = m.plot_sobol_sensitivity(self.data[sid]["selected_qoi"])
+            fig = await asyncio.to_thread(m.plot_sobol_sensitivity, self.data[sid]["selected_qoi"])
             await self.emit("sobol", {"partialVariance": p_var.to_dict(), "sobolIndex": s_idx.to_dict()}, to=sid)
-            await self.emit("sobol_plot", self.fig_to_binary(fig), to=sid)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            await self.emit("sobol_plot", binary_data, to=sid)
         except Exception as e:
             await self.emit("error", f"Sobol error: {e}", to=sid)
 
@@ -642,10 +700,13 @@ class AppHandler(socketio.AsyncNamespace):
         try:
             model = self.data[sid]["model"]
             qoi = data
+            if "partial_var_df" not in self.data[sid]:
+                p_var, s_idx = await asyncio.to_thread(model.get_sobol_sensitivity)
+                self.data[sid].update({"partial_var_df": p_var, "sobol_index_df": s_idx})
             partial_var_df = self.data[sid]["partial_var_df"]
             sobol_index_df = self.data[sid]["sobol_index_df"]
-            fig = model.plot_sobol_sensitivity(self.data[sid]["selected_qoi"], param_name=qoi)
-            binary_data = self.fig_to_binary(fig)
+            fig = await asyncio.to_thread(model.plot_sobol_sensitivity, self.data[sid]["selected_qoi"], param_name=qoi)
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
             await self.emit(
                 "sobol",
                 {
@@ -670,6 +731,82 @@ class AppHandler(socketio.AsyncNamespace):
         except Exception as e:
             await self.emit("error", f"SHAP error: {e}", to=sid)
 
+    async def on_update(self, sid, data):
+        nwalkers = data["nwalkers"]
+        nburn = data["nburn"]
+        niter = data["niter"]
+        try:
+            sigma_flat = self.data[sid]["sigma"].values.flatten()
+            E = generate_stdrn_simparamset(sigma_flat)
+            dt = DigitalTwin(self.data[sid]["model"], E)
+            name_pairs = self.data[sid].get("name_pairs", None)
+            await asyncio.to_thread(
+                functools.partial(dt.update, self.data[sid]["zmean"], nwalkers, nburn, niter, name_pairs=name_pairs)
+            )
+            map = dt.get_MAP()
+            fig_mcmc = utils.plot_MCMC(
+                self.data[sid]["model"],
+                self.data[sid]["sample"],
+                dt,
+                nwalkers=data["nwalkers"],
+                map_point=map,
+            )
+            means_df, variances_df = dt.get_mean_and_var_of_posterior()
+            self.data[sid]["dt"] = dt
+            await self.emit(
+                "update",
+                {
+                    "mcmc": self.fig_to_binary(fig_mcmc),
+                    "mean": means_df.to_dict(),
+                    "variance": variances_df.to_dict(),
+                    "map": map.to_dict(),
+                },
+                to=sid,
+            )
+        except Exception as e:
+            await self.emit("error", str(e), to=sid)
+
+    async def on_get_posterior_samples(self, sid):
+        try:
+            dt = self.data[sid]["dt"]
+            post_samples_df = await asyncio.to_thread(dt.get_posterior_samples)
+            await self.emit("posterior_samples", post_samples_df.to_csv(index=False), to=sid)
+        except Exception as e:
+            await self.emit("error", str(e), to=sid)
+
+    async def on_get_posterior_statistics(self, sid):
+        try:
+            dt = self.data[sid]["dt"]
+            means_df, variances_df = await asyncio.to_thread(dt.get_mean_and_var_of_posterior)
+            map_df = await asyncio.to_thread(dt.get_MAP)
+            stats_df = pd.concat([means_df, variances_df, map_df], ignore_index=True)
+            stats_df.insert(0, "statistic", ["mean", "variance", "map"])
+            await self.emit("posterior_statistics", stats_df.to_csv(index=False), to=sid)
+        except Exception as e:
+            await self.emit("error", str(e), to=sid)
+
+    # --- Multi-Model Handlers ---
+    async def on_add_model(self, sid, data):
+        try:
+            retrieved_file, name = await self.recieve_chunks(sid, data)
+            if retrieved_file is not None:
+                model = pickle.loads(retrieved_file)
+                if "models" not in self.data[sid]:
+                    self.data[sid]["models"] = {}
+                self.data[sid]["models"][name] = {"model": model}
+                await self.emit("models", self.format_models(self.data[sid]["models"]), to=sid)
+        except Exception as e:
+            print(f"Error adding model: {e}")
+            await self.emit("error", f"Error adding model: {str(e)}", to=sid)
+
+    async def on_create_joint(self, sid, data):
+        try:
+            models = [obj["model"] for obj in self.data[sid]["models"].values()]
+            self.data[sid]["joint_manager"] = JointManager(models, data)
+            await self.emit("joint_created", to=sid)
+        except Exception as e:
+            print("Error creating joint manager: ", e)
+
     # --- Demo Handlers ---
     async def on_data_driven_demo(self, sid):
         try:
@@ -677,7 +814,7 @@ class AppHandler(socketio.AsyncNamespace):
             with open(os.path.join(d_path, "model2.ddpm"), "rb") as f:
                 m = pickle.load(f)
             self.data[sid].update({
-                "model": m, "paramset": m.Q, "qoi": m.QoI, "selected_qoi": m.QoI,
+                "model": m, "variableset": m.Q, "qoi": m.QoI, "selected_qoi": m.QoI,
                 "sample": m.samples, "selected_sample": m.samples,
                 "zmean": pd.read_csv(os.path.join(d_path, "example_z_m_df.csv")),
                 "sigma": pd.read_csv(os.path.join(d_path, "example_sigma_df.csv")),
@@ -699,7 +836,7 @@ class AppHandler(socketio.AsyncNamespace):
             with open(os.path.join(d_path, "spring1.ddpm"), "rb") as f:
                 m = pickle.load(f)
             self.data[sid].update({
-                "model": m, "paramset": m.Q, "qoi": m.QoI, "selected_qoi": m.QoI,
+                "model": m, "variableset": m.Q, "qoi": m.QoI, "selected_qoi": m.QoI,
                 "sample": m.samples, "selected_sample": m.samples,
                 "zmean": pd.read_csv(os.path.join(d_path, "z_spring1_df.csv")),
                 "sigma": pd.read_csv(os.path.join(d_path, "sigma_spring1.csv"))
@@ -712,22 +849,52 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_multi_model_demo(self, sid):
         try:
-            d_path = os.path.join(BASE_DIR, "demo/data/spring_data")
-            with open(os.path.join(d_path, "Spring1_model.sm"), "rb") as f1, \
-                 open(os.path.join(d_path, "Spring2_model.sm"), "rb") as f2:
-                m1, m2 = pickle.load(f1), pickle.load(f2)
-            
+            model1_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/Spring1_model.sm")
+            )
+            model2_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/Spring2_model.sm")
+            )
+
+            zm1_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/z_spring1_df.csv")
+            )
+            zm2_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/z_spring2_df.csv")
+            )
+            sigma1_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/sigma_spring1.csv")
+            )
+            sigma2_path = os.path.abspath(
+                os.path.join(BASE_DIR, "demo/data/spring_data/sigma_spring2.csv")
+            )
+
             join = {"joint_m1_m2": ["m1", "m2"], "joint_k1_k2": ["k1", "k2"]}
+
+            with open(model1_path, "rb") as f:
+                model1 = pickle.load(f)
+            with open(model2_path, "rb") as f:
+                model2 = pickle.load(f)
             self.data[sid]["models"] = {
-                "model1": {"model": m1, "zmean": pd.read_csv(os.path.join(d_path, "z_spring1_df.csv")), 
-                          "sigma": pd.read_csv(os.path.join(d_path, "sigma_spring1.csv"))},
-                "model2": {"model": m2, "zmean": pd.read_csv(os.path.join(d_path, "z_spring2_df.csv")), 
-                          "sigma": pd.read_csv(os.path.join(d_path, "sigma_spring2.csv"))}
+                "model1": {"model": model1},
+                "model2": {"model": model2},
             }
-            self.data[sid]["joint_manager"] = JointManager([m1, m2], join)
-            await self.emit("models", self.format_models(self.data[sid]["models"]), to=sid)
-            await self.emit("joint_created", to=sid)
+            await self.emit(
+                "models", self.format_models(self.data[sid]["models"]), to=sid
+            )
+
+            self.data[sid]["joint_manager"] = JointManager([model1, model2], join)
+            await self.emit("joint_created", {"connections": join}, to=sid)
+            zm1_df = pd.read_csv(zm1_path)
+            zm2_df = pd.read_csv(zm2_path)
+            self.data[sid]["models"]["model1"]["zmean"] = zm1_df
+            self.data[sid]["models"]["model2"]["zmean"] = zm2_df
+            sigma1_df = pd.read_csv(sigma1_path)
+            sigma2_df = pd.read_csv(sigma2_path)
+            self.data[sid]["models"]["model1"]["sigma"] = sigma1_df
+            self.data[sid]["models"]["model2"]["sigma"] = sigma2_df
             await self.send_multi_measurements(sid)
         except Exception as e:
-            await self.emit("error", f"Multi-Model Demo error: {e}", to=sid)
+            print(f"An error occurred: {e}")
+            await self.emit("error", str(e), to=sid)
 

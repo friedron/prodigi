@@ -41,8 +41,10 @@
                         <h2 class="h4 mb-0">Computation of Moments and Sensitivities</h2>
                     </div>
                     <div class="d-flex gap-2">
-                        <button class="btn-pro" @click="computeMeanVar">
-                            <i class="bi bi-play-fill"></i> Compute
+                        <button class="btn-pro" @click="computeMeanVar" :disabled="isLoading">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-play-fill"></i>
+                            {{ isLoading ? "Computing…" : "Compute" }}
                         </button>
                         <button v-if="uqPage.mean.length > 0" class="btn-pro btn-outline-pro" @click="saveMeanVar">
                             <i class="bi bi-download"></i> Export
@@ -85,8 +87,10 @@
                             <label class="small fw-bold text-muted text-uppercase mb-0">Max Order</label>
                             <input type="number" class="form-control form-control-sm" style="width: 70px" v-model="uqPage.maxOrder" />
                         </div>
-                        <button class="btn-pro" @click="computeSobol">
-                            <i class="bi bi-lightning-fill"></i> Run Analysis
+                        <button class="btn-pro" @click="computeSobol" :disabled="isLoading">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-lightning-fill"></i>
+                            {{ isLoading ? "Running…" : "Run Analysis" }}
                         </button>
                         <button v-if="hasSobolData" class="btn-pro btn-outline-pro" @click="saveSobol">
                             <i class="bi bi-download"></i> Export
@@ -155,8 +159,10 @@
                         <h2 class="h4 mb-0">SHAP Explanations</h2>
                     </div>
                     <div class="d-flex gap-2">
-                        <button class="btn-pro" @click="computeAvgShap">
-                            <i class="bi bi-cpu"></i> Compute SHAP
+                        <button class="btn-pro" @click="computeAvgShap" :disabled="isLoading">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-cpu"></i>
+                            {{ isLoading ? "Computing…" : "Compute SHAP" }}
                         </button>
                         <button v-if="hasShapData" class="btn-pro btn-outline-pro" @click="saveShap">
                             <i class="bi bi-download"></i> Export
@@ -209,11 +215,15 @@
                         </select>
                     </div>
                     <div class="col-md-6 d-flex gap-2">
-                        <button class="btn-pro flex-grow-1" :disabled="!uqPage.selectedQoI" @click="computeShapBeeswarm">
-                            <i class="bi bi-grid-3x3"></i> SHAP Beeswarm
+                        <button class="btn-pro flex-grow-1" :disabled="!uqPage.selectedQoI || isLoading" @click="computeShapBeeswarm">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-grid-3x3"></i>
+                            SHAP Beeswarm
                         </button>
-                        <button class="btn-pro flex-grow-1" :disabled="!uqPage.selectedQoI" @click="computeSobolSingle">
-                            <i class="bi bi-circle-square"></i> Sobol Single
+                        <button class="btn-pro flex-grow-1" :disabled="!uqPage.selectedQoI || isLoading" @click="computeSobolSingle">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-circle-square"></i>
+                            Sobol Single
                         </button>
                     </div>
                 </div>
@@ -242,8 +252,10 @@
                         <h2 class="h4 mb-0">Point Prediction & Attribution</h2>
                     </div>
                     <div class="d-flex gap-2">
-                        <button class="btn-pro" @click="computeSingle">
-                            <i class="bi bi-play-circle"></i> Run Prediction
+                        <button class="btn-pro" @click="computeSingle" :disabled="isLoading">
+                            <span v-if="isLoading" class="btn-spinner"></span>
+                            <i v-else class="bi bi-play-circle"></i>
+                            {{ isLoading ? "Predicting…" : "Run Prediction" }}
                         </button>
                         <button v-if="uqPage.prediction.length > 0" class="btn-pro btn-outline-pro" @click="savePred">
                             <i class="bi bi-download"></i> Save Results
@@ -340,6 +352,12 @@ export default {
         mode: { type: String, required: true },
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
+        // Mirrors App.vue's own isLoading, which its socket handlers for
+        // mean_var/sobol/shap/predict/etc already clear at the precise
+        // moment each response lands - reusing it here (rather than the
+        // generic activity-based indicator) keeps these buttons accurate
+        // for slow compute with no in-between socket chatter.
+        isLoading: { type: Boolean, default: false },
     },
     computed: {
         hasSobolData() {
@@ -555,5 +573,19 @@ export default {
 
 .text-primary {
     color: var(--primary) !important;
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

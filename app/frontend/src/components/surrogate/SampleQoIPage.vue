@@ -51,8 +51,10 @@
             </div>
 
             <div class="mt-4 pt-3 border-top d-flex justify-content-center gap-3">
-                <button class="btn-pro px-5" @click="sample">
-                    <i class="bi bi-play-fill"></i> Run Sampling
+                <button class="btn-pro px-5" @click="sample" :disabled="loadingState.active">
+                    <span v-if="loadingState.active" class="btn-spinner"></span>
+                    <i v-else class="bi bi-play-fill"></i>
+                    {{ loadingState.active ? "Sampling…" : "Run Sampling" }}
                 </button>
                 <button v-if="paramPage.samples.length > 0" class="btn-pro btn-outline-pro" @click="saveSample">
                     <i class="bi bi-download"></i> Save Results
@@ -122,12 +124,16 @@
 import NextButton from "../NextButton.vue";
 import BackButton from "../BackButton.vue";
 import LogoLine from "../LogoLine.vue";
+import { loadingState } from "../../loadingState";
 
 export default {
     components: {
         NextButton,
         BackButton,
         LogoLine,
+    },
+    setup() {
+        return { loadingState };
     },
     props: {
         socket: { type: Object, required: true },
@@ -252,5 +258,19 @@ export default {
 
 .text-primary {
     color: var(--primary) !important;
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

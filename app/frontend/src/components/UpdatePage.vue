@@ -2,12 +2,11 @@
     <div class="update-page container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
-                :logos="[
-                    { src: '/static/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UGR_logo.PNG', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UL_logo.png', alt: 'Uni Logo' },
-                ]"
-            />
+            :logos="[
+                { src: '/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
+                { src: '/logos/hs_logo.png', alt: 'HS Logo' },
+            ]"
+        />
         </div>
 
         <BackButton :prevPage="'measurements'" :changePage="changePage" />
@@ -35,8 +34,10 @@
                     <input id="niter" type="number" class="form-control" v-model="updatePage.data.niter" />
                 </div>
                 <div class="col-md-3">
-                    <button class="btn-pro w-100 py-2" @click="update">
-                        <i class="bi bi-play-circle-fill me-2"></i> Run Bayesian Update
+                    <button class="btn-pro w-100 py-2" @click="update" :disabled="isLoading">
+                        <span v-if="isLoading" class="btn-spinner me-2"></span>
+                        <i v-else class="bi bi-play-circle-fill me-2"></i>
+                        {{ isLoading ? "Running…" : "Run Bayesian Update" }}
                     </button>
                 </div>
             </div>
@@ -59,8 +60,10 @@
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <button class="btn-pro btn-outline-pro w-100 py-2" @click="getDataForModel" :disabled="selectedModel === null">
-                        <i class="bi bi-search me-2"></i> Get Model Data
+                    <button class="btn-pro btn-outline-pro w-100 py-2" @click="getDataForModel" :disabled="selectedModel === null || isLoading">
+                        <span v-if="isLoading" class="btn-spinner me-2"></span>
+                        <i v-else class="bi bi-search me-2"></i>
+                        {{ isLoading ? "Loading…" : "Get Model Data" }}
                     </button>
                 </div>
             </div>
@@ -156,19 +159,13 @@
             <div class="d-flex flex-wrap gap-3">
                 <OutputLoader
                     :title="'Export Posterior Statistics'"
-                    :dkgApiStatus="dkgApiStatus"
-                    :socket="socket"
+                    :loading="savingStatistics"
                     @save-file="saveStatistics"
-                    :mode="'stats'"
-                    :dkgToken="dkgToken"
                 />
                 <OutputLoader
                     :title="'Export Posterior Samples'"
-                    :dkgApiStatus="dkgApiStatus"
-                    :socket="socket"
+                    :loading="savingSamples"
                     @save-file="savePostSamples"
-                    :mode="'samples'"
-                    :dkgToken="dkgToken"
                 />
             </div>
         </div>
@@ -192,8 +189,12 @@ export default {
         mode: { type: String, required: true },
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
-        dkgApiStatus: { type: String, required: true },
-        dkgToken: { type: String, required: true },
+        // Mirrors App.vue's own isLoading, which the "update"/"update_multi"
+        // socket handlers clear at the precise moment each response lands -
+        // reusing it here (rather than the generic activity-based indicator)
+        // keeps this button accurate for a slow MCMC run with no in-between
+        // socket chatter.
+        isLoading: { type: Boolean, default: false },
     },
     data() {
         return {
@@ -204,6 +205,8 @@ export default {
                 mean: {},
                 variance: {},
             },
+            savingStatistics: false,
+            savingSamples: false,
         };
     },
     methods: {
@@ -216,10 +219,11 @@ export default {
             }
         },
         savePostSamples() {
+            this.savingSamples = true;
             this.socket.emit("get_posterior_samples");
         },
         saveStatistics() {
-            console.log("Requesting posterior statistics...");
+            this.savingStatistics = true;
             this.socket.emit("get_posterior_statistics");
         },
         getDataForModel() {
@@ -229,6 +233,7 @@ export default {
     },
     mounted() {
         this.socket.on("posterior_samples", (data) => {
+            this.savingSamples = false;
             const blob = new Blob([data], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -243,6 +248,7 @@ export default {
             this.updateDone = true;
         });
         this.socket.on("posterior_statistics", (data) => {
+            this.savingStatistics = false;
             const blob = new Blob([data], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -251,6 +257,10 @@ export default {
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+        });
+        this.socket.on("error", () => {
+            this.savingSamples = false;
+            this.savingStatistics = false;
         });
     },
     beforeUnmount() {
@@ -311,5 +321,19 @@ export default {
 
 .italic {
     font-style: italic;
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

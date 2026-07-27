@@ -25,7 +25,7 @@
                     <div class="upload-zone p-3 border rounded bg-light">
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <span class="fw-bold">Input Data (.csv)</span>
-                            <InputLoader :dkgApiStatus="dkgApiStatus" :socket="socket" @load-file="loadInput" :fileType="'.csv'" :loadType="'subtract_input'" :dkgToken="dkgToken" />
+                            <InputLoader :socket="socket" @load-file="loadInput" :fileType="'.csv'" :loadType="'subtract_input'" />
                         </div>
                         <div v-if="features_file" class="small text-success d-flex align-items-center">
                             <i class="bi bi-check-circle-fill me-1"></i> Loaded: {{ features_file }}
@@ -36,7 +36,7 @@
                     <div class="upload-zone p-3 border rounded bg-light">
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <span class="fw-bold">Output Data (.csv, .unv)</span>
-                            <InputLoader :dkgApiStatus="dkgApiStatus" :socket="socket" @load-file="loadOutput" :fileType="'.csv, .unv'" :loadType="'subtract_output'" :dkgToken="dkgToken" />
+                            <InputLoader :socket="socket" @load-file="loadOutput" :fileType="'.csv, .unv'" :loadType="'subtract_output'" />
                         </div>
                         <div v-if="labels_file" class="small text-success d-flex align-items-center">
                             <i class="bi bi-check-circle-fill me-1"></i> Loaded: {{ labels_file }}
@@ -80,8 +80,10 @@
             </div>
 
             <div class="mt-4 pt-3 border-top d-flex justify-content-center">
-                <button class="btn-pro px-5" @click="subtract">
-                    <i class="bi bi-shield-check"></i> Analyze Threshold Exceedance
+                <button class="btn-pro px-5" @click="subtract" :disabled="isAnalyzing">
+                    <span v-if="isAnalyzing" class="btn-spinner"></span>
+                    <i v-else class="bi bi-shield-check"></i>
+                    {{ isAnalyzing ? "Analyzing…" : "Analyze Threshold Exceedance" }}
                 </button>
             </div>
         </div>
@@ -106,11 +108,8 @@
                     <OutputLoader
                         v-if="subtractPage.errorRatio !== null"
                         :title="'Export Analyzed Data'"
-                        :dkgApiStatus="dkgApiStatus"
-                        :socket="socket"
+                        :loading="isSavingSubtracted"
                         @save-file="saveSubtracted"
-                        :mode="'threshold_exceedance'"
-                        :dkgToken="dkgToken"
                     />
                 </div>
             </div>
@@ -238,13 +237,13 @@ export default {
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
-        dkgApiStatus: { type: String, required: true },
-        dkgToken: { type: String, required: true },
     },
     data() {
         return {
             features_file: null,
             labels_file: null,
+            isAnalyzing: false,
+            isSavingSubtracted: false,
         };
     },
     methods: {
@@ -255,18 +254,23 @@ export default {
             this.sendInChunks(event, "load_subtract_output", this.socket);
         },
         subtract() {
+            this.isAnalyzing = true;
             this.$emit("set-loading", true);
             this.socket.emit("threshold_exceed", {
                 selected_features: this.subtractPage.selectedFeatures,
                 threshold: this.subtractPage.threshold,
             });
         },
-        saveSubtracted() { this.socket.emit("save_subtracted_data"); },
+        saveSubtracted() {
+            this.isSavingSubtracted = true;
+            this.socket.emit("save_subtracted_data");
+        },
         saveReferenceStats() { this.socket.emit("save_reference_stats"); },
         saveMonitoringStats() { this.socket.emit("save_monitoring_stats"); },
     },
     mounted() {
         this.socket.on("subtracted_data", (csvData) => {
+            this.isSavingSubtracted = false;
             const blob = new Blob([csvData], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -295,6 +299,11 @@ export default {
         });
         this.socket.on("features_loaded", (data) => { this.features_file = data.filename; });
         this.socket.on("labels_loaded", (data) => { this.labels_file = data.filename; });
+        this.socket.on("subtract_data", () => { this.isAnalyzing = false; });
+        this.socket.on("error", () => {
+            this.isAnalyzing = false;
+            this.isSavingSubtracted = false;
+        });
     },
     beforeUnmount() {
         this.socket.off("subtracted_data");
@@ -385,5 +394,19 @@ export default {
     font-size: 0.7rem;
     text-transform: uppercase;
     color: var(--text-muted);
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

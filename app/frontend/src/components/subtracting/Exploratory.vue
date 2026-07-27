@@ -160,10 +160,8 @@ export default {
                 .catch((err) => console.error(err));
         });
         
-        // Initial plot
-        if (this.socket.connected) {
-            this.socket.emit("exploratory_plot", { mode: this.plot_mode });
-        }
+        // Initial plot (socket.io buffers emits until connected, so no need to check connected state)
+        this.socket.emit("exploratory_plot", { mode: this.plot_mode });
     },
     beforeUnmount() {
         this.socket.off("exploratory_plot");

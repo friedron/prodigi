@@ -2,12 +2,11 @@
     <div class="subtract-effects-page container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
-                :logos="[
-                    { src: '/static/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UGR_logo.PNG', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UL_logo.png', alt: 'Uni Logo' },
-                ]"
-            />
+            :logos="[
+                { src: '/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
+                { src: '/logos/hs_logo.png', alt: 'HS Logo' },
+            ]"
+        />
         </div>
 
         <BackButton :prevPage="'uq'" :changePage="changePage" />
@@ -35,8 +34,10 @@
                 </div>
                 <div class="col-md-6 d-flex flex-column justify-content-center align-items-center border-start">
                     <div v-if="subtracted_df === null" class="text-center w-100">
-                        <button class="btn-pro px-4 py-3" :disabled="subtractPage.selectedFeatures.length === 0" @click="subtract">
-                            <i class="bi bi-calculator-history"></i> Subtract Selected Features Effect from QoI
+                        <button class="btn-pro px-4 py-3" :disabled="subtractPage.selectedFeatures.length === 0 || isSubtracting" @click="subtract">
+                            <span v-if="isSubtracting" class="btn-spinner"></span>
+                            <i v-else class="bi bi-calculator-history"></i>
+                            {{ isSubtracting ? "Subtracting…" : "Subtract Selected Features Effect from QoI" }}
                         </button>
                         <p class="small text-muted mt-3" v-if="subtractPage.selectedFeatures.length === 0">Select at least one feature to continue.</p>
                     </div>
@@ -63,11 +64,8 @@
                 <div class="d-flex gap-2">
                     <OutputLoader
                         :title="'Export Data'"
-                        :dkgApiStatus="dkgApiStatus"
-                        :socket="socket"
+                        :loading="isDownloading"
                         @save-file="download"
-                        :mode="'subtracted_data'"
-                        :dkgToken="dkgToken"
                     />
                     <button class="btn-pro btn-outline-pro btn-sm" @click="download_describe">
                         <i class="bi bi-download"></i> Export Stats
@@ -215,16 +213,8 @@ export default {
             type: Function,
             required: true,
         },
-        dkgApiStatus: {
-            type: String,
-            required: true,
-        },
         convertToBase64: {
             type: Function,
-            required: true,
-        },
-        dkgToken: {
-            type: String,
             required: true,
         },
     },
@@ -236,6 +226,8 @@ export default {
             plot_scatter: null,
             subtracted_df: null,
             describe_df: null,
+            isSubtracting: false,
+            isDownloading: false,
         };
     },
 
@@ -265,12 +257,14 @@ export default {
             reader.readAsText(file);
         },
         subtract() {
+            this.isSubtracting = true;
             this.$emit("set-loading", true);
             this.socket.emit("subtract", {
                 selected_features: this.subtractPage.selectedFeatures,
             });
         },
         download() {
+            this.isDownloading = true;
             this.socket.emit("download_subtracted");
         },
         download_describe() {
@@ -288,6 +282,7 @@ export default {
     },
     mounted() {
         this.socket.on("download_subtracted_data", (csvData) => {
+            this.isDownloading = false;
             const blob = new Blob([csvData], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -318,6 +313,7 @@ export default {
             const describe = JSON.parse(data["describe_df"]);
             this.subtracted_df = subtracted;
             this.describe_df = describe;
+            this.isSubtracting = false;
             this.$emit("set-loading", false);
         });
         this.socket.on("subtracted_plot_scatter", (data) => {
@@ -328,6 +324,10 @@ export default {
                 .catch((err) => {
                     console.error(err);
                 });
+        });
+        this.socket.on("error", () => {
+            this.isSubtracting = false;
+            this.isDownloading = false;
         });
     },
 
@@ -431,5 +431,19 @@ export default {
 optgroup {
     font-weight: 700;
     color: var(--primary);
+}
+
+.btn-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-top-color: currentColor;
+    animation: btn-spin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
 }
 </style>

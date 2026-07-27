@@ -29,6 +29,60 @@
 </template>
 
 <script>
+const MENU_STRUCTURE = {
+    home: {
+        items: [],
+        name: "Home",
+    },
+    subtracting: {
+        items: [
+            { page: "upload", label: "Upload Already Trained Data-Driven Predictive Model", requires: [] },
+            { page: "params", label: "Upload Features And Labels", requires: [] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
+            { page: "surrogate", label: "Data-Driven Modeling", requires: ["params"] },
+            { page: "uq", label: "UQ and Sensitivities", requires: ["surrogate"] },
+            { page: "subtract", label: "Remove External Effects", requires: ["surrogate"] },
+            { page: "thresholdExceedance", label: "Detect Threshold Exceedance", requires: ["surrogate"] },
+        ],
+        name: "Subtracting weather effects",
+    },
+    surrogate: {
+        items: [
+            { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
+            { page: "params", label: "Parameter Definition", requires: [] },
+            { page: "sample", label: "Sample And Upload QoI", requires: ["params"] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
+            { page: "surrogate", label: "Surrogate Modeling", requires: ["sample"] },
+            { page: "uq", label: "UQ And Sensitivities", requires: ["surrogate"] },
+            { page: "measurements", label: "Definition Of Measurements", requires: ["surrogate"] },
+            { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
+            { page: "update", label: "Update / Digital Twining", requires: ["compare"] },
+        ],
+        name: "Surrogate-based updating",
+    },
+    inverse: {
+        items: [
+            { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
+            { page: "params", label: "Parameter Definition", requires: [] },
+            { page: "sample", label: "Sample And Upload QoI", requires: ["params"] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
+            { page: "inverse", label: "Inverse Modelling", requires: ["sample"] },
+            { page: "measurements", label: "Definition Of Measurements", requires: ["inverse"] },
+            { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
+            { page: "compute", label: "Compute updated Parameters", requires: ["compare"] },
+        ],
+        name: "AI-based inverse modeling",
+    },
+    multiModel: {
+        items: [
+            { page: "upload", label: "Upload Predictive Models and Link Parameters", requires: [] },
+            { page: "measurements", label: "Definition Of Measurements", requires: ["upload"] },
+            { page: "update", label: "Joint Update", requires: ["measurements"] },
+        ],
+        name: "Multi-infrastructure Updating",
+    },
+};
+
 export default {
     props: {
         mode: {
@@ -46,59 +100,7 @@ export default {
     },
     computed: {
         menuStructure() {
-            return {
-                home: {
-                    items: [],
-                    name: "Home",
-                },
-                subtracting: {
-                    items: [
-                        { page: "upload", label: "Upload Already Trained Data-Driven Predictive Model" },
-                        { page: "params", label: "Upload Features And Labels" },
-                        { page: "exploratory", label: "Exploratory Data Analysis" },
-                        { page: "surrogate", label: "Data-Driven Modeling" },
-                        { page: "uq", label: "UQ and Sensitivities" },
-                        { page: "subtract", label: "Remove External Effects" },
-                        { page: "thresholdExceedance", label: "Detect Threshold Exceedance" },
-                    ],
-                    name: "Subtracting weather effects",
-                },
-                surrogate: {
-                    items: [
-                        { page: "upload", label: "Upload Already Trained Surrogate Predictive Model" },
-                        { page: "params", label: "Parameter Definition" },
-                        { page: "sample", label: "Sample And Upload QoI" },
-                        { page: "exploratory", label: "Exploratory Data Analysis" },
-                        { page: "surrogate", label: "Surrogate Modeling" },
-                        { page: "uq", label: "UQ And Sensitivities" },
-                        { page: "measurements", label: "Definition Of Measurements" },
-                        { page: "compare", label: "Link QoI And Measurement" },
-                        { page: "update", label: "Update / Digital Twining" },
-                    ],
-                    name: "Surrogate-based updating",
-                },
-                inverse: {
-                    items: [
-                        { page: "upload", label: "Upload Already Trained Surrogate Predictive Model" },
-                        { page: "params", label: "Parameter Definition" },
-                        { page: "sample", label: "Sample And Upload QoI" },
-                        { page: "exploratory", label: "Exploratory Data Analysis" },
-                        { page: "inverse", label: "Inverse Modelling" },
-                        { page: "measurements", label: "Definition Of Measurements" },
-                        { page: "compare", label: "Link QoI And Measurement" },
-                        { page: "compute", label: "Compute updated Parameters" },
-                    ],
-                    name: "AI-based inverse modeling",
-                },
-                multiModel: {
-                    items: [
-                        { page: "upload", label: "Upload Predictive Models and Link Parameters" },
-                        { page: "measurements", label: "Definition Of Measurements" },
-                        { page: "update", label: "Joint Update" },
-                    ],
-                    name: "Multi-infrastructure Updating",
-                },
-            };
+            return MENU_STRUCTURE;
         },
     },
     methods: {
@@ -106,48 +108,10 @@ export default {
             return this.completedPages.includes(page);
         },
         isPageAvailable(page) {
-            const availablePages = ["upload", "params", "input", "dkgInput", "uploadWeatherData", "compare"];
-            if (this.completedPages.includes("params")) {
-                availablePages.push("sample");
-                availablePages.push("exploratory");
-            }
-            if (this.completedPages.includes("sample")) {
-                availablePages.push("surrogate");
-            }
-            if (this.mode === "subtracting") {
-                if (this.completedPages.includes("params")) {
-                    availablePages.push("surrogate");
-                }
-            }
-            if (this.completedPages.includes("surrogate")) {
-                availablePages.push("uq", "measurements", "subtract", "thresholdExceedance");
-            }
-            if (this.completedPages.includes("measurements")) {
-                availablePages.push("compare");
-            }
-            if (this.completedPages.includes("compare")) {
-                availablePages.push("update");
-            }
-            if (this.mode === "subtracting") {
-                if (this.completedPages.includes("measurements")) {
-                    availablePages.push("update");
-                }
-            }
-            if (this.mode === "multiModel") {
-                if (this.completedPages.includes("upload")) {
-                    availablePages.push("measurements");
-                }
-                if (this.completedPages.includes("measurements")) {
-                    availablePages.push("update");
-                }
-            }
-            if (this.completedPages.includes("input")) {
-                availablePages.push("visualization");
-                availablePages.push("wallSafety");
-                availablePages.push("analysis");
-                availablePages.push("output");
-            }
-            return this.isPageDone(page) || availablePages.includes(page);
+            if (this.isPageDone(page)) return true;
+            const item = (MENU_STRUCTURE[this.mode]?.items ?? []).find((i) => i.page === page);
+            if (!item) return false;
+            return item.requires.every((requiredPage) => this.completedPages.includes(requiredPage));
         },
     },
 };

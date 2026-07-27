@@ -2,12 +2,11 @@
     <div class="measurements-page container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
-                :logos="[
-                    { src: '/static/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UGR_logo.PNG', alt: 'Sztaki Logo' },
-                    { src: '/static/logos/UL_logo.png', alt: 'Uni Logo' },
-                ]"
-            />
+            :logos="[
+                { src: '/logos/sztaki_logo.svg', alt: 'Sztaki Logo' },
+                { src: '/logos/hs_logo.png', alt: 'HS Logo' },
+            ]"
+        />
         </div>
 
         <BackButton :prevPage="mode === 'surrogate' ? 'uq' : 'subtract'" :changePage="changePage" />
@@ -31,12 +30,10 @@
                 </div>
                 <div class="col-md-4 text-end">
                     <InputLoader 
-                        :dkgApiStatus="dkgApiStatus" 
                         :socket="socket" 
                         @load-file="loadMean" 
                         :fileType="'.csv'" 
                         :loadType="'zmean'" 
-                        :dkgToken="dkgToken" 
                     />
                 </div>
             </div>
@@ -59,7 +56,7 @@
                     <tbody>
                         <tr v-for="(value, key) in measurementsPage.zmean" :key="key">
                             <td class="fw-bold text-primary">{{ key }}</td>
-                            <td class="text-end font-monospace">{{ value[0].toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ (+Object.values(value)[0]).toFixed(4) }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -85,12 +82,10 @@
                 </div>
                 <div class="col-md-4 text-end">
                     <InputLoader 
-                        :dkgApiStatus="dkgApiStatus" 
                         :socket="socket" 
                         @load-file="loadSigma" 
                         :fileType="'.csv'" 
                         :loadType="'sigma'" 
-                        :dkgToken="dkgToken"
                     />
                 </div>
             </div>
@@ -113,7 +108,7 @@
                     <tbody>
                         <tr v-for="(value, key) in measurementsPage.sigma" :key="key">
                             <td class="fw-bold text-primary">{{ key }}</td>
-                            <td class="text-end font-monospace">{{ value[0].toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ (+Object.values(value)[0]).toFixed(4) }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -148,8 +143,6 @@ export default {
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
-        dkgApiStatus: { type: String, required: true },
-        dkgToken: { type: String, required: true },
     },
     data() {
         return {
