@@ -255,6 +255,7 @@ export default {
                         seed: null,
                     },
                     modelConfig: {
+                        predictionType: "deterministic",
                         modelType: "",
                         gpcConfig: {
                             initConfig: {
@@ -273,7 +274,26 @@ export default {
                         },
                         nnConfig: {
                             initConfig: {
-                                layers: [],
+                                layers: [
+                                    {
+                                        id: "_init1",
+                                        numOfNeurons: 128,
+                                        activationFunction: "relu",
+                                        dropout: 0.0,
+                                    },
+                                    {
+                                        id: "_init2",
+                                        numOfNeurons: 128,
+                                        activationFunction: "relu",
+                                        dropout: 0.0,
+                                    },
+                                    {
+                                        id: "_init3",
+                                        numOfNeurons: 64,
+                                        activationFunction: "relu",
+                                        dropout: 0.0,
+                                    },
+                                ],
                                 outputAF: "",
                             },
                             trainConfig: {
@@ -281,6 +301,16 @@ export default {
                                 loss: "",
                                 epochs: null,
                                 batch_size: null,
+                            },
+                        },
+                        mdnConfig: {
+                            initConfig: {
+                                numComponents: 5,
+                            },
+                        },
+                        crpsConfig: {
+                            trainConfig: {
+                                numSamplers: 4,
                             },
                         },
                     },

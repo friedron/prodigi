@@ -32,6 +32,7 @@ from utils.preprocess_modeshape_data import (
     scatter_plot,
 )
 import utils.get_openmeteo_data as openmeteo
+from utils.probabilistic_models import MDNPredictiveModel, CRPSPredictiveModel
 from handlers.rate_limiter import RateLimiter
 from handlers.safe_unpickle import restricted_loads
 
@@ -328,6 +329,18 @@ class AppHandler(socketio.AsyncNamespace):
                     self.data[sid]["weather_full"],
                     self.data[sid]["sample"].columns.tolist(),
                 )
+                if X.shape[1] == 0:
+                    await self.emit(
+                        "error",
+                        "All weather predictors were constant over this UNV file's "
+                        "time window (recording session shorter than the weather "
+                        "data's resolution) and were dropped - no usable features "
+                        "remain. Fetch weather data at a finer resolution or use a "
+                        "longer UNV recording.",
+                        to=sid,
+                    )
+                    return
+
                 self.data[sid]["sample"] = X
                 self.data[sid]["qoi"] = y
                 await self.emit(
@@ -647,6 +660,19 @@ class AppHandler(socketio.AsyncNamespace):
             elif m_type == "LinReg":
                 model = PredictiveModel(variableset, s_labels, m_type)
                 t_cfg = {}
+            elif m_type in ("MDN", "CRPS"):
+                init = {
+                    "layers": [{
+                        "neurons": int(l["numOfNeurons"]), "activation": l["activationFunction"], "dropout": float(l["dropout"])
+                    } for l in m_cfg["nnConfig"]["initConfig"]["layers"]],
+                }
+                if m_type == "MDN":
+                    init["numComponents"] = int(m_cfg["mdnConfig"]["initConfig"]["numComponents"])
+                    model = MDNPredictiveModel(variableset, s_labels, m_type, **init)
+                else:
+                    init["numSamplers"] = int(m_cfg["crpsConfig"]["trainConfig"]["numSamplers"])
+                    model = CRPSPredictiveModel(variableset, s_labels, m_type, **init)
+                t_cfg = m_cfg["nnConfig"]["trainConfig"]
 
             if model:
                 x_t, x_v, y_t, y_v = model.train_test_split(

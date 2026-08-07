@@ -257,6 +257,7 @@ def main(args):
             if apphandler.cleanup_callback:
                 apphandler.cleanup_callback.stop()
             print("Shutting down complete.")
+            os._exit(0)
 
     except Exception as e:
         print(f"An error occurred: {e}")

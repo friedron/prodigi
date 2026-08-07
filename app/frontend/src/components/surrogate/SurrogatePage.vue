@@ -66,8 +66,32 @@
                 <h2 class="h4 mb-0">Model & Hyperparameters</h2>
             </div>
 
-            <div class="row mb-4">
+            <div class="row mb-4" v-if="mode === 'subtracting'">
                 <div class="col-md-6">
+                    <label class="form-label fw-bold d-flex align-items-center gap-1">
+                        Model Type
+                        <Tooltip :content="'<p><b>Deterministic:</b> Produces a single point prediction for each output.<br><b>Probabilistic:</b> Produces a predictive distribution to quantify uncertainty.</p>'" />
+                    </label>
+                    <select class="form-select" v-model="surrogatePage.modelConfig.predictionType">
+                        <option value="deterministic">Deterministic</option>
+                        <option value="probabilistic">Probabilistic</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-6" v-if="mode === 'subtracting' && surrogatePage.modelConfig.predictionType === 'probabilistic'">
+                    <label class="form-label fw-bold d-flex align-items-center gap-1">
+                        Surrogate Model Architecture
+                        <Tooltip :content="'<p><b>MDN:</b> Mixture Density Network, predicts a full probability distribution as a mixture of Gaussians.<br><b>CRPS:</b> Trained directly against the Continuous Ranked Probability Score for probabilistic forecasts.</p>'" />
+                    </label>
+                    <select class="form-select" v-model="surrogatePage.modelConfig.modelType">
+                        <option value="" selected disabled hidden>Select an architecture</option>
+                        <option value="MDN">Mixture Density Network (MDN)</option>
+                        <option value="CRPS">CRPS</option>
+                    </select>
+                </div>
+                <div class="col-md-6" v-else>
                     <label class="form-label fw-bold d-flex align-items-center gap-1">
                         Surrogate Model Architecture
                         <Tooltip :content="'<p><b>GPCE:</b> Polynomial expansions for uncertainty quantification.<br><b>GBT:</b> Advanced tree boosting.<br><b>DNN:</b> Deep Neural Networks for complex non-linear mappings.</p>'" />
@@ -83,7 +107,10 @@
             </div>
 
             <!-- Conditional Hyperparameters -->
-            <div class="hyper-config p-3 rounded bg-light border" v-if="surrogatePage.modelConfig.modelType">
+            <div class="hyper-config p-3 rounded bg-light border text-muted" v-if="surrogatePage.modelConfig.modelType === 'LinReg'">
+                Linear Regression has no hyperparameters to configure.
+            </div>
+            <div class="hyper-config p-3 rounded bg-light border" v-else-if="surrogatePage.modelConfig.modelType">
                 <div v-if="surrogatePage.modelConfig.modelType === 'gPCE'" class="row g-3">
                     <div class="col-md-4">
                         <label class="form-label fw-bold d-flex align-items-center gap-1">
@@ -117,7 +144,27 @@
                     </div>
                 </div>
 
-                <div v-if="surrogatePage.modelConfig.modelType === 'DNN'">
+                <div v-if="['DNN', 'MDN', 'CRPS'].includes(surrogatePage.modelConfig.modelType)">
+                    <div v-if="surrogatePage.modelConfig.modelType === 'MDN'" class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold d-flex align-items-center gap-1">
+                                Number of Components
+                                <Tooltip :content="'<p>Number of Gaussian components in the mixture used to represent the predictive distribution.</p>'" />
+                            </label>
+                            <input type="number" class="form-control" v-model="surrogatePage.modelConfig.mdnConfig.initConfig.numComponents" />
+                        </div>
+                    </div>
+
+                    <div v-if="surrogatePage.modelConfig.modelType === 'CRPS'" class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold d-flex align-items-center gap-1">
+                                Number of Independent Random Samplers
+                                <Tooltip :content="'<p>Number of independent noise samples drawn per input when training against the CRPS/energy score.</p>'" />
+                            </label>
+                            <input type="number" class="form-control" v-model="surrogatePage.modelConfig.crpsConfig.trainConfig.numSamplers" />
+                        </div>
+                    </div>
+
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="mb-0 fs-6 fw-bold">Network Architecture</h5>
                         <button class="btn-pro btn-sm" @click="addLayer"><i class="bi bi-plus"></i> Add Layer</button>
@@ -382,6 +429,9 @@ export default {
             deep: true,
             immediate: true,
         },
+        "surrogatePage.modelConfig.predictionType"() {
+            this.surrogatePage.modelConfig.modelType = "";
+        },
     },
     methods: {
         toggleAll(type, isSelectAll) {
@@ -434,6 +484,7 @@ export default {
             }
             const { splitConfig, modelConfig } = this.surrogatePage;
             this.isTraining = true;
+            console.log("Training with config:", { splitConfig, modelConfig, selectedFeats: this.selectedFeats, selectedLabels: this.selectedLabels });
             this.socket.emit("train", {
                 splitConfig,
                 modelConfig,

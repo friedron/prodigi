@@ -94,10 +94,7 @@ function formatDate(date) {
 
 // Open-Meteo's archive typically lags a day behind, so default to the most
 // recent complete day rather than "today".
-const defaultEndDate = new Date();
-defaultEndDate.setDate(defaultEndDate.getDate() - 1);
-const defaultStartDate = new Date(defaultEndDate);
-defaultStartDate.setDate(defaultStartDate.getDate() - 13);
+const maxDate = new Date();
 
 export default {
     setup() {
@@ -116,9 +113,9 @@ export default {
             selectedVariables: [],
             latitude: 52.52,
             longitude: 13.41,
-            startDate: formatDate(defaultStartDate),
-            endDate: formatDate(defaultEndDate),
-            maxDate: formatDate(defaultEndDate),
+            startDate: "2025-02-04",
+            endDate: "2026-02-04",
+            maxDate: formatDate(maxDate),
             errors: {
                 variables: "",
                 location: "",
