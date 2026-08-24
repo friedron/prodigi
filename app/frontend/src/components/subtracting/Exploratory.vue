@@ -9,7 +9,7 @@
             />
         </div>
 
-        <BackButton :prevPage="'params'" :changePage="changePage" />
+        <BackButton :prevPage="'variables'" :changePage="changePage" />
 
         <div class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
@@ -54,13 +54,13 @@
                 <div class="col-md-4">
                     <label class="form-label fw-bold">X-Axis (Parameter/QoI)</label>
                     <select v-model="param1" class="form-select">
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'p1-'+param.name" :value="param.name">
-                                {{ param.name }}
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'p1-'+variable.name" :value="variable.name">
+                                {{ variable.name }}
                             </option>
                         </optgroup>
-                        <optgroup label="QoI" v-if="paramPage.qoiTable">
-                            <option v-for="param in Object.keys(paramPage.qoiTable)" :key="'q1-'+param" :value="param">
+                        <optgroup label="QoI" v-if="variablePage.qoiTable">
+                            <option v-for="param in Object.keys(variablePage.qoiTable)" :key="'q1-'+param" :value="param">
                                 {{ param }}
                             </option>
                         </optgroup>
@@ -69,13 +69,13 @@
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Y-Axis (Parameter/QoI)</label>
                     <select v-model="param2" class="form-select">
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'p2-'+param.name" :value="param.name">
-                                {{ param.name }}
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'p2-'+variable.name" :value="variable.name">
+                                {{ variable.name }}
                             </option>
                         </optgroup>
-                        <optgroup label="QoI" v-if="paramPage.qoiTable">
-                            <option v-for="param in Object.keys(paramPage.qoiTable)" :key="'q2-'+param" :value="param">
+                        <optgroup label="QoI" v-if="variablePage.qoiTable">
+                            <option v-for="param in Object.keys(variablePage.qoiTable)" :key="'q2-'+param" :value="param">
                                 {{ param }}
                             </option>
                         </optgroup>
@@ -85,13 +85,13 @@
                     <label class="form-label fw-bold">Color by (Optional)</label>
                     <select v-model="colorBy" class="form-select">
                         <option value="">None</option>
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'pc-'+param.name" :value="param.name">
-                                {{ param.name }}
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'pc-'+variable.name" :value="variable.name">
+                                {{ variable.name }}
                             </option>
                         </optgroup>
-                        <optgroup label="QoI" v-if="paramPage.qoiTable">
-                            <option v-for="param in Object.keys(paramPage.qoiTable)" :key="'qc-'+param" :value="param">
+                        <optgroup label="QoI" v-if="variablePage.qoiTable">
+                            <option v-for="param in Object.keys(variablePage.qoiTable)" :key="'qc-'+param" :value="param">
                                 {{ param }}
                             </option>
                         </optgroup>
@@ -133,7 +133,7 @@ export default {
         LogoLine,
     },
     props: {
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         socket: { type: Object, required: true },
         convertToBase64: { type: Function, required: true },
         changePage: { type: Function, required: true },

@@ -180,7 +180,7 @@ class AppHandler(socketio.AsyncNamespace):
         return None, None
 
     # --- Formatting ---
-    def format_params(self, variables):
+    def format_variables(self, variables):
         mapping = {
             "NormalDistribution": "normal",
             "UniformDistribution": "uniform",
@@ -220,14 +220,14 @@ class AppHandler(socketio.AsyncNamespace):
         await self.emit("sample", m.samples.to_numpy().tolist(), to=sid)
         await self.emit("train_result", "Done", to=sid)
         await self.emit("load_model", {
-            "params": self.format_params(m.Q.variables),
+            "variables": self.format_variables(m.Q.variables),
             "modelConfig": self.format_model_config(m)
         }, to=sid)
         await self.emit("qoi", m.QoI.describe().to_json(), to=sid)
         await self.emit("features_stats", m.samples.describe().to_json(), to=sid)
 
     async def send_variableset(self, sid):
-        await self.emit("params", self.format_params(self.data[sid]["variableset"].variables), to=sid)
+        await self.emit("variables", self.format_variables(self.data[sid]["variableset"].variables), to=sid)
 
     async def send_multi_measurements(self, sid):
         res = {

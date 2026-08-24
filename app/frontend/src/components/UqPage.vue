@@ -337,7 +337,7 @@ export default {
         LogoLine,
     },
     props: {
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         surrogatePage: { type: Object, required: true },
         uqPage: { type: Object, required: true },
         mode: { type: String, required: true },
@@ -365,7 +365,7 @@ export default {
         },
         saveMeanVar() {
             try {
-                const paramNames = Object.keys(this.paramPage.qoiTable);
+                const paramNames = Object.keys(this.variablePage.qoiTable);
                 const meanVarData = paramNames.map((name, index) => ({
                     parameter: name,
                     mean: this.uqPage.mean[index] || null,

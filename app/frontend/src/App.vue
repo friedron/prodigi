@@ -57,8 +57,8 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :sendInChunks="sendInChunks"
             />
             <ParamPage
-                v-if="activePage === 'params' && mode === 'surrogate'"
-                v-model:paramPage="paramPage"
+                v-if="activePage === 'variables' && mode === 'surrogate'"
+                v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
@@ -66,15 +66,15 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             />
             <SampleQoIPage
                 v-if="activePage === 'sample' && mode === 'surrogate'"
-                v-model:paramPage="paramPage"
+                v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
                 :sendInChunks="sendInChunks"
             />
             <ParamPageDD
-                v-if="activePage === 'params' && mode === 'subtracting'"
-                v-model:paramPage="paramPage"
+                v-if="activePage === 'variables' && mode === 'subtracting'"
+                v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
@@ -82,7 +82,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             />
             <Exploratory
                 v-if="activePage === 'exploratory'"
-                :paramPage="paramPage"
+                :variablePage="variablePage"
                 :socket="socket"
                 :convertToBase64="convertToBase64"
                 :changePage="changePage"
@@ -91,7 +91,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 v-if="activePage === 'surrogate'"
                 v-model:surrogatePage="surrogatePage"
                 :mode="mode"
-                :paramPage="paramPage"
+                :variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
@@ -99,7 +99,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <UqPage
                 v-if="activePage === 'uq'"
                 v-model:uqPage="uqPage"
-                :paramPage="paramPage"
+                :variablePage="variablePage"
                 :surrogatePage="surrogatePage"
                 :mode="mode"
                 :socket="socket"
@@ -110,7 +110,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <SubtractEffects
                 v-if="activePage === 'subtract'"
                 v-model:subtractPage="subtractPage"
-                :paramPage="paramPage"
+                :variablePage="variablePage"
                 :surrogatePage="surrogatePage"
                 :socket="socket"
                 :changePage="changePage"
@@ -120,7 +120,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <ThresholdExceedance
                 v-if="activePage === 'thresholdExceedance'"
                 v-model:subtractPage="subtractPage"
-                :paramPage="paramPage"
+                :variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
                 :sendInChunks="sendInChunks"
@@ -147,7 +147,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <CompareMeasurement
                 v-if="activePage === 'compare'"
                 v-model:measurementsPage="measurementsPage"
-                :qoi="Object.keys(paramPage.qoiTable)"
+                :qoi="Object.keys(variablePage.qoiTable)"
                 :measured="Object.keys(measurementsPage.zmean)"
                 :mode="mode"
                 :socket="socket"
@@ -230,9 +230,9 @@ export default {
                     models: [],
                     jointCreated: false,
                 },
-                paramPage: {
+                variablePage: {
                     data: {
-                        params: [],
+                        variables: [],
                         sampleMethod: null,
                         numSamples: null,
                         randomSeed: null,
@@ -525,33 +525,33 @@ export default {
             return target;
         }
         socket.on("load_model", (data) => {
-            const { params, modelConfig } = data;
-            this.paramPage.data.params = Array.isArray(params) ? params : [];
-            for (let param of this.paramPage.data.params) {
-                param["id"] = this.generateId();
+            const { variables, modelConfig } = data;
+            this.variablePage.data.variables = Array.isArray(variables) ? variables : [];
+            for (let variable of this.variablePage.data.variables) {
+                variable["id"] = this.generateId();
             }
             this.surrogatePage.modelConfig = deepMerge(this.surrogatePage.modelConfig, modelConfig);
-            this.addPageDone("params");
+            this.addPageDone("variables");
             this.addPageDone("sample");
             this.addPageDone("surrogate");
             this.addPageDone("upload");
         });
-        socket.on("params", (data) => {
-            this.paramPage.data.params = data;
+        socket.on("variables", (data) => {
+            this.variablePage.data.variables = data;
         });
         socket.on("sample", (data) => {
-            this.paramPage.samples = data;
+            this.variablePage.samples = data;
         });
         socket.on("shift_scale", (data) => {
-            this.paramPage.data.params = data;
+            this.variablePage.data.variables = data;
         });
         socket.on("qoi", (data) => {
             const parsed = JSON.parse(data);
-            this.paramPage.qoiTable = parsed;
+            this.variablePage.qoiTable = parsed;
         });
         socket.on("features_stats", (data) => {
             const parsed = JSON.parse(data);
-            this.paramPage.inputStats = parsed;
+            this.variablePage.inputStats = parsed;
         });
         socket.on("train_result", (data) => {
             this.surrogatePage.trainResult = data;

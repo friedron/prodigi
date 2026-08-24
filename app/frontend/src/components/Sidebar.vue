@@ -37,21 +37,21 @@ const MENU_STRUCTURE = {
     subtracting: {
         items: [
             { page: "upload", label: "Upload Already Trained Data-Driven Predictive Model", requires: [] },
-            { page: "params", label: "Upload Features And Labels", requires: [] },
-            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
-            { page: "surrogate", label: "Data-Driven Modeling", requires: ["params"] },
+            { page: "variables", label: "Upload Features And Labels", requires: [] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },
+            { page: "surrogate", label: "Data-Driven Modeling", requires: ["variables"] },
             { page: "uq", label: "UQ and Sensitivities", requires: ["surrogate"] },
             { page: "subtract", label: "Remove External Effects", requires: ["surrogate"] },
             { page: "thresholdExceedance", label: "Detect Threshold Exceedance", requires: ["surrogate"] },
         ],
-        name: "Subtracting weather effects",
+        name: "Probabilistic Weather Effect Modeling",
     },
     surrogate: {
         items: [
             { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
-            { page: "params", label: "Parameter Definition", requires: [] },
-            { page: "sample", label: "Sample And Upload QoI", requires: ["params"] },
-            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
+            { page: "variables", label: "Variable Definition", requires: [] },
+            { page: "sample", label: "Sample And Upload QoI", requires: ["variables"] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },
             { page: "surrogate", label: "Surrogate Modeling", requires: ["sample"] },
             { page: "uq", label: "UQ And Sensitivities", requires: ["surrogate"] },
             { page: "measurements", label: "Definition Of Measurements", requires: ["surrogate"] },
@@ -63,9 +63,9 @@ const MENU_STRUCTURE = {
     inverse: {
         items: [
             { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
-            { page: "params", label: "Parameter Definition", requires: [] },
-            { page: "sample", label: "Sample And Upload QoI", requires: ["params"] },
-            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["params"] },
+            { page: "variables", label: "Variable Definition", requires: [] },
+            { page: "sample", label: "Sample And Upload QoI", requires: ["variables"] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },
             { page: "inverse", label: "Inverse Modelling", requires: ["sample"] },
             { page: "measurements", label: "Definition Of Measurements", requires: ["inverse"] },
             { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
@@ -80,6 +80,19 @@ const MENU_STRUCTURE = {
             { page: "update", label: "Joint Update", requires: ["measurements"] },
         ],
         name: "Multi-infrastructure Updating",
+    },
+    mosaic: {
+        items: [
+            { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
+            { page: "variables", label: "Variable Definition", requires: [] },
+            { page: "sample", label: "Sample And Upload QoI", requires: ["variables"] },
+            { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },
+            { page: "surrogate", label: "Data-Driven Modeling", requires: ["variables"] },
+            { page: "measurements", label: "Definition Of Measurements", requires: ["surrogate"] },
+            { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
+            { page: "update", label: "Update / Digital Twining", requires: ["compare"] },
+        ],
+        name: "MOSAIC Modeling",
     },
 };
 

@@ -230,7 +230,7 @@ export default {
         OutputLoader,
     },
     props: {
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         subtractPage: { type: Object, required: true },
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },

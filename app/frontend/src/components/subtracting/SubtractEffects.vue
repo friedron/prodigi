@@ -116,8 +116,8 @@
                 <div class="col-md-4">
                     <label class="form-label fw-bold small text-uppercase text-muted">X-Axis</label>
                     <select v-model="param1" class="form-select">
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'p1-'+param.name" :value="param.name">{{ param.name }}</option>
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'p1-'+variable.name" :value="variable.name">{{ variable.name }}</option>
                         </optgroup>
                         <optgroup label="QoI">
                             <option v-for="param in surrogatePage.outputQoI" :key="'q1-'+param" :value="param">{{ param }}</option>
@@ -127,8 +127,8 @@
                 <div class="col-md-4">
                     <label class="form-label fw-bold small text-uppercase text-muted">Y-Axis</label>
                     <select v-model="param2" class="form-select">
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'p2-'+param.name" :value="param.name">{{ param.name }}</option>
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'p2-'+variable.name" :value="variable.name">{{ variable.name }}</option>
                         </optgroup>
                         <optgroup label="QoI">
                             <option v-for="param in surrogatePage.outputQoI" :key="'q2-'+param" :value="param">{{ param }}</option>
@@ -139,8 +139,8 @@
                     <label class="form-label fw-bold small text-uppercase text-muted">Color by</label>
                     <select v-model="colorBy" class="form-select">
                         <option value="">None</option>
-                        <optgroup label="Parameters">
-                            <option v-for="param in paramPage.data.params" :key="'pc-'+param.name" :value="param.name">{{ param.name }}</option>
+                        <optgroup label="Variables">
+                            <option v-for="variable in variablePage.data.variables" :key="'pc-'+variable.name" :value="variable.name">{{ variable.name }}</option>
                         </optgroup>
                         <optgroup label="QoI">
                             <option v-for="param in surrogatePage.outputQoI" :key="'qc-'+param" :value="param">{{ param }}</option>
@@ -193,7 +193,7 @@ export default {
         OutputLoader,
     },
     props: {
-        paramPage: {
+        variablePage: {
             type: Object,
             required: true,
         },

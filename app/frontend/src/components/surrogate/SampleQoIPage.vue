@@ -9,7 +9,7 @@
             />
         </div>
 
-        <BackButton :prevPage="'params'" :changePage="changePage" />
+        <BackButton :prevPage="'variables'" :changePage="changePage" />
 
         <!-- Sampling Configuration Card -->
         <div class="card-pro content-card mb-4 mt-4">
@@ -33,7 +33,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Sampling Method</label>
-                    <select id="sampleMethod" class="form-select" v-model="paramPage.data.sampleMethod">
+                    <select id="sampleMethod" class="form-select" v-model="variablePage.data.sampleMethod">
                         <option :value="null" selected disabled hidden>Choose Method</option>
                         <option value="MC">Monte Carlo</option>
                         <option value="QMC_Halton">QMC Halton</option>
@@ -42,11 +42,11 @@
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Number of Samples</label>
-                    <input id="numSamples" type="number" class="form-control" v-model.number="paramPage.data.numSamples" placeholder="Enter count" />
+                    <input id="numSamples" type="number" class="form-control" v-model.number="variablePage.data.numSamples" placeholder="Enter count" />
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Random Seed (Optional)</label>
-                    <input id="randomSeed" type="number" class="form-control" placeholder="Random" v-model.number="paramPage.data.randomSeed" />
+                    <input id="randomSeed" type="number" class="form-control" placeholder="Random" v-model.number="variablePage.data.randomSeed" />
                 </div>
             </div>
 
@@ -56,7 +56,7 @@
                     <i v-else class="bi bi-play-fill"></i>
                     {{ loadingState.active ? "Sampling…" : "Run Sampling" }}
                 </button>
-                <button v-if="paramPage.samples.length > 0" class="btn-pro btn-outline-pro" @click="saveSample">
+                <button v-if="variablePage.samples.length > 0" class="btn-pro btn-outline-pro" @click="saveSample">
                     <i class="bi bi-download"></i> Save Results
                 </button>
             </div>
@@ -75,7 +75,7 @@
                 </label>
             </div>
 
-            <div v-if="Object.keys(paramPage.qoiTable).length > 0" class="table-responsive">
+            <div v-if="Object.keys(variablePage.qoiTable).length > 0" class="table-responsive">
                 <table class="table-custom table-hover align-middle custom-table border">
                     <thead>
                         <tr>
@@ -91,7 +91,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(row, key) in paramPage.qoiTable" :key="key">
+                        <tr v-for="(row, key) in variablePage.qoiTable" :key="key">
                             <td class="fw-bold text-primary">{{ key }}</td>
                             <td class="text-end font-monospace">{{ row.mean.toFixed(4) }}</td>
                             <td class="text-end font-monospace">{{ row.std ? row.std.toFixed(4) : '-' }}</td>
@@ -114,7 +114,7 @@
 
         <NextButton
             :nextPage="'exploratory'"
-            :available="paramPage.samples.length > 0 && Object.keys(paramPage.qoiTable).length > 0"
+            :available="variablePage.samples.length > 0 && Object.keys(variablePage.qoiTable).length > 0"
             :changePage="changePage"
         />
     </div>
@@ -137,18 +137,18 @@ export default {
     },
     props: {
         socket: { type: Object, required: true },
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
     },
     watch: {
-        paramPage: {
+        variablePage: {
             handler(newVal) {
                 if (
                     newVal.samples.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
-                    newVal.data.params.length > 0
+                    newVal.data.variables.length > 0
                 ) {
                     this.addPageDone("sample");
                 }
@@ -169,9 +169,9 @@ export default {
                         console.log("Invalid file format.");
                         return;
                     }
-                    this.paramPage.data["sampleMethod"] = data["sampleMethod"];
-                    this.paramPage.data["numSamples"] = data["numSamples"];
-                    this.paramPage.data["randomSeed"] = data["randomSeed"];
+                    this.variablePage.data["sampleMethod"] = data["sampleMethod"];
+                    this.variablePage.data["numSamples"] = data["numSamples"];
+                    this.variablePage.data["randomSeed"] = data["randomSeed"];
                 } catch (error) {
                     console.log("Error: ", error.message);
                 }
@@ -182,8 +182,8 @@ export default {
             this.sendInChunks(event.target.files[0], "load_sample", this.socket);
         },
         sample() {
-            if (this.paramPage.data.sampleMethod !== null && this.paramPage.data.numSamples !== null) {
-                this.socket.emit("sample", this.paramPage.data);
+            if (this.variablePage.data.sampleMethod !== null && this.variablePage.data.numSamples !== null) {
+                this.socket.emit("sample", this.variablePage.data);
             } else {
                 alert("Please select a sampling method and enter the number of samples.");
             }
@@ -202,14 +202,14 @@ export default {
             };
 
             try {
-                const paramNames = this.paramPage.data.params.map(p => p.name);
-                let csv = paramNames.join(",") + "\n" + 
-                        this.paramPage.samples.map(row => row.join(",")).join("\n");
-                
+                const variableNames = this.variablePage.data.variables.map(v => v.name);
+                let csv = variableNames.join(",") + "\n" +
+                        this.variablePage.samples.map(row => row.join(",")).join("\n");
+
                 download(csv, "sample.csv", "text/csv");
 
                 setTimeout(() => {
-                    const { params, ...sampleSettings } = this.paramPage.data;
+                    const { variables, ...sampleSettings } = this.variablePage.data;
                     download(JSON.stringify(sampleSettings), "sampleSettings.json", "application/json");
                 }, 500);
 

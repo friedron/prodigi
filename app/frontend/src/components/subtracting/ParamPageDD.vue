@@ -1,5 +1,5 @@
 <template>
-    <div class="param-page-dd container-fluid px-0">
+    <div class="variable-page-dd container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
                 :logos="[
@@ -52,14 +52,14 @@
         </div>
 
         <!-- Approximated Distributions Card -->
-        <div v-if="Object.keys(paramPage.data.params).length > 0" class="card-pro content-card mb-4">
+        <div v-if="Object.keys(variablePage.data.variables).length > 0" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-calculator fs-4 me-2 text-primary"></i>
                     <h2 class="h4 mb-0">Approximated Distributions</h2>
                 </div>
-                <button class="btn-pro btn-outline-pro btn-sm" @click="saveParams">
-                    <i class="bi bi-download"></i> Export Parameters
+                <button class="btn-pro btn-outline-pro btn-sm" @click="saveVariables">
+                    <i class="bi bi-download"></i> Export Variables
                 </button>
             </div>
 
@@ -67,18 +67,18 @@
                 <table class="table table-hover align-middle custom-table border">
                     <thead>
                         <tr>
-                            <th>Parameter Name</th>
+                            <th>Variable Name</th>
                             <th>Inferred Distribution</th>
                             <th class="text-end">Dist Param 1</th>
                             <th class="text-end">Dist Param 2</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="param in paramPage.data.params" :key="param.id">
-                            <td class="fw-bold text-primary">{{ param.name }}</td>
-                            <td><span class="badge rounded-pill bg-light text-dark border">{{ param.distribution }}</span></td>
-                            <td class="text-end font-monospace">{{ param.distParam1.toFixed(4) }}</td>
-                            <td class="text-end font-monospace">{{ param.distParam2.toFixed(4) }}</td>
+                        <tr v-for="variable in variablePage.data.variables" :key="variable.id">
+                            <td class="fw-bold text-primary">{{ variable.name }}</td>
+                            <td><span class="badge rounded-pill bg-light text-dark border">{{ variable.distribution }}</span></td>
+                            <td class="text-end font-monospace">{{ variable.distParam1.toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ variable.distParam2.toFixed(4) }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -86,7 +86,7 @@
         </div>
 
         <!-- Input Summary Statistics Card -->
-        <div v-if="Object.keys(paramPage.inputStats).length > 0" class="card-pro content-card mb-4">
+        <div v-if="Object.keys(variablePage.inputStats).length > 0" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-table fs-4 me-2 text-primary"></i>
                 <h2 class="h4 mb-0">Input Summary Statistics</h2>
@@ -108,7 +108,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(row, key) in paramPage.inputStats" :key="key">
+                        <tr v-for="(row, key) in variablePage.inputStats" :key="key">
                             <td class="fw-bold text-primary">{{ key }}</td>
                             <td class="text-end font-monospace">{{ row.mean.toFixed(4) }}</td>
                             <td class="text-end font-monospace">{{ row.std.toFixed(4) }}</td>
@@ -125,7 +125,7 @@
         </div>
 
         <!-- Output Summary Statistics Card -->
-        <div v-if="Object.keys(paramPage.qoiTable).length > 0" class="card-pro content-card mb-4">
+        <div v-if="Object.keys(variablePage.qoiTable).length > 0" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-clipboard-data fs-4 me-2 text-primary"></i>
                 <h2 class="h4 mb-0">Output Summary Statistics</h2>
@@ -165,7 +165,7 @@
 
         <NextButton
             :nextPage="'exploratory'"
-            :available="Object.keys(paramPage.inputStats).length > 0 && Object.keys(paramPage.qoiTable).length > 0"
+            :available="Object.keys(variablePage.inputStats).length > 0 && Object.keys(variablePage.qoiTable).length > 0"
             :changePage="changePage"
         />
     </div>
@@ -190,7 +190,7 @@ export default {
     },
     props: {
         socket: { type: Object, required: true },
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
@@ -198,21 +198,21 @@ export default {
     data() {
         return {
             showModal: false,
-            selectedParam: null,
+            selectedVariable: null,
             features_file: null,
             labels_file: null,
             file : null
         };
     },
     watch: {
-        paramPage: {
+        variablePage: {
             handler(newVal) {
                 if (
                     newVal.samples?.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
-                    newVal.data?.params?.length > 0
+                    newVal.data?.variables?.length > 0
                 ) {
-                    this.addPageDone("params");
+                    this.addPageDone("variables");
                 }
             },
             deep: true,
@@ -221,7 +221,7 @@ export default {
     },
     computed: {
         filteredQoi() {
-            return Object.entries(this.paramPage.qoiTable).filter(([key]) => key !== "Datetime" && key !== "mode id");
+            return Object.entries(this.variablePage.qoiTable).filter(([key]) => key !== "Datetime" && key !== "mode id");
         },
     },
     methods: {
@@ -241,15 +241,15 @@ export default {
                 return;
             }
         },
-        saveParams() {
+        saveVariables() {
             try {
-                let filtered = { params: this.paramPage.data.params.map(({ id, ...rest }) => rest) };
+                let filtered = { variables: this.variablePage.data.variables.map(({ id, ...rest }) => rest) };
                 const data = JSON.stringify(filtered, null, 2);
                 const blob = new Blob([data], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
-                link.download = "paramset.json";
+                link.download = "variableset.json";
                 link.click();
                 URL.revokeObjectURL(url);
             } catch (error) {
@@ -273,7 +273,7 @@ export default {
 </script>
 
 <style scoped>
-.param-page-dd {
+.variable-page-dd {
     max-width: 1000px;
     margin: 0 auto;
 }

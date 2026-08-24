@@ -9,7 +9,7 @@
             />
         </div>
 
-        <BackButton :prevPage="'params'" :changePage="changePage" />
+        <BackButton :prevPage="'variables'" :changePage="changePage" />
 
         <!-- Data Configuration Section -->
         <div class="card-pro content-card mb-4 mt-4">
@@ -23,11 +23,11 @@
                     <div class="stats-box d-flex gap-4">
                         <div class="stat-item">
                             <label class="text-muted small text-uppercase fw-bold d-block">Inputs (Features)</label>
-                            <span class="h4 mb-0">{{ paramPage.data.params.length }}</span>
+                            <span class="h4 mb-0">{{ variablePage.data.variables.length }}</span>
                         </div>
                         <div class="stat-item border-start ps-4">
                             <label class="text-muted small text-uppercase fw-bold d-block">Outputs (QoI)</label>
-                            <span class="h4 mb-0">{{ Object.keys(paramPage.qoiTable).length || 0 }}</span>
+                            <span class="h4 mb-0">{{ Object.keys(variablePage.qoiTable).length || 0 }}</span>
                         </div>
                     </div>
                 </div>
@@ -250,14 +250,14 @@
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <span class="fw-bold">Features (Input)</span>
                             <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('params', true)">All</button>
-                                <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('params', false)">None</button>
+                                <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('variables', true)">All</button>
+                                <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('variables', false)">None</button>
                             </div>
                         </div>
                         <div class="scroll-area">
-                            <div v-for="param in paramPage.data.params" :key="param.name" class="custom-check">
-                                <input type="checkbox" :id="'p-' + param.name" :value="param.name" v-model="selectedFeats">
-                                <label :for="'p-' + param.name">{{ param.name }}</label>
+                            <div v-for="variable in variablePage.data.variables" :key="variable.name" class="custom-check">
+                                <input type="checkbox" :id="'p-' + variable.name" :value="variable.name" v-model="selectedFeats">
+                                <label :for="'p-' + variable.name">{{ variable.name }}</label>
                             </div>
                         </div>
                     </div>
@@ -273,7 +273,7 @@
                             </div>
                         </div>
                         <div class="scroll-area">
-                            <div v-for="label in Object.keys(paramPage.qoiTable)" :key="label" class="custom-check">
+                            <div v-for="label in Object.keys(variablePage.qoiTable)" :key="label" class="custom-check">
                                 <input type="checkbox" :id="'l-' + label" :value="label" v-model="selectedLabels">
                                 <label :for="'l-' + label">{{ label }}</label>
                             </div>
@@ -391,7 +391,7 @@ export default {
     props: {
         mode: { type: String, required: true },
         surrogatePage: { type: Object, required: true },
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
@@ -400,8 +400,8 @@ export default {
         return {
             showModal: false,
             selectedLayer: null,
-            selectedFeats: this.paramPage.data.params.map(p => p.name),
-            selectedLabels: this.paramPage.qoiTable ? Object.keys(this.paramPage.qoiTable) : [],
+            selectedFeats: this.variablePage.data.variables.map(v => v.name),
+            selectedLabels: this.variablePage.qoiTable ? Object.keys(this.variablePage.qoiTable) : [],
             isTraining: false,
         };
     },
@@ -435,10 +435,10 @@ export default {
     },
     methods: {
         toggleAll(type, isSelectAll) {
-            if (type === 'params') {
-                this.selectedFeats = isSelectAll ? this.paramPage.data.params.map(p => p.name) : [];
+            if (type === 'variables') {
+                this.selectedFeats = isSelectAll ? this.variablePage.data.variables.map(v => v.name) : [];
             } else if (type === 'labels') {
-                this.selectedLabels = isSelectAll ? Object.keys(this.paramPage.qoiTable) : [];
+                this.selectedLabels = isSelectAll ? Object.keys(this.variablePage.qoiTable) : [];
             }
         },
         generateId() {
@@ -510,7 +510,7 @@ export default {
     },
     computed: {
         computeNumOfLeaves() {
-            return computeNumOfLeaves(this.surrogatePage, this.paramPage);
+            return computeNumOfLeaves(this.surrogatePage, this.variablePage);
         },
     },
 };

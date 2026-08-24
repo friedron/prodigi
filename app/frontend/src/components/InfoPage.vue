@@ -15,7 +15,7 @@
 
             <div class="action-footer d-flex flex-wrap gap-3 pt-4 border-top">
                 <template v-if="mode === 'surrogate' || mode === 'subtracting'">
-                    <button class="btn-pro btn-outline-pro" @click="changePage('params')">
+                    <button class="btn-pro btn-outline-pro" @click="changePage('variables')">
                         <i class="bi bi-plus-circle"></i> Create New Model
                     </button>
                     <button class="btn-pro" @click="changePage('upload')">
@@ -79,7 +79,7 @@ export default {
         return {
             demoLoading: false,
             titles: {
-                subtracting: "Subtracting Weather Effects",
+                subtracting: "Probabilistic Weather Effect Modeling",
                 surrogate: "Hybrid Digital Twinning",
                 multiModel: "Multi-Building Design Updating",
                 earthquakeResilience: "Assessment of Earthquake Resilience",

@@ -8,7 +8,7 @@
         <div class="modes-grid">
             <div class="mode-card" @click="selectMode('subtracting')">
                 <div class="card-content">
-                    <h3>Subtracting weather effects</h3>
+                    <h3>Probabilistic Weather Effect Modeling</h3>
                     <p>Construct purely data-driven models directly from input-output measurements. Isolate effects like temperature variations and assess output sensitivities.</p>
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>

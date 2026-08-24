@@ -1,5 +1,5 @@
 <template>
-    <div class="param-page container-fluid px-0">
+    <div class="variable-page container-fluid px-0">
         <div class="logo-section mb-4">
             <LogoLine
                 :logos="[
@@ -13,14 +13,14 @@
 
         <div class="card-pro content-card mt-4">
             <div class="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom">
-                <h1 class="h3 mb-0">Definition of A-priori Uncertain Parameters</h1>
+                <h1 class="h3 mb-0">Definition of A-priori Uncertain Variables</h1>
                 <div class="d-flex gap-2 align-items-center">
-                    <label for="paramInput" class="btn-pro btn-outline-pro mb-0">
+                    <label for="variableInput" class="btn-pro btn-outline-pro mb-0">
                         <i class="bi bi-upload"></i> Load from JSON
-                        <input type="file" id="paramInput" @change="loadParams" accept=".json" class="d-none" />
+                        <input type="file" id="variableInput" @change="loadVariables" accept=".json" class="d-none" />
                     </label>
-                    <button class="btn-pro" @click="addParam">
-                        <i class="bi bi-plus-circle"></i> Add Parameter
+                    <button class="btn-pro" @click="addVariable">
+                        <i class="bi bi-plus-circle"></i> Add Variable
                     </button>
                 </div>
             </div>
@@ -39,28 +39,28 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="param in paramPage.data.params" :key="param.id" @click="openEditModal(param)" class="cursor-pointer">
-                            <td class="fw-bold text-primary">{{ param.name || 'Unnamed' }}</td>
-                            <td><span class="badge rounded-pill bg-light text-dark border">{{ param.distribution || 'None' }}</span></td>
-                            <td><code>{{ param.distParam1 ?? '-' }}</code></td>
-                            <td><code>{{ param.distParam2 ?? '-' }}</code></td>
-                            <td><code>{{ param.scale ?? '1.0' }}</code></td>
-                            <td><code>{{ param.shift ?? '0.0' }}</code></td>
+                        <tr v-for="variable in variablePage.data.variables" :key="variable.id" @click="openEditModal(variable)" class="cursor-pointer">
+                            <td class="fw-bold text-primary">{{ variable.name || 'Unnamed' }}</td>
+                            <td><span class="badge rounded-pill bg-light text-dark border">{{ variable.distribution || 'None' }}</span></td>
+                            <td><code>{{ variable.distParam1 ?? '-' }}</code></td>
+                            <td><code>{{ variable.distParam2 ?? '-' }}</code></td>
+                            <td><code>{{ variable.scale ?? '' }}</code></td>
+                            <td><code>{{ variable.shift ?? '' }}</code></td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end gap-1">
-                                    <button class="btn-action edit" @click.stop="openEditModal(param)" title="Edit">
+                                    <button class="btn-action edit" @click.stop="openEditModal(variable)" title="Edit">
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
-                                    <button class="btn-action remove" @click.stop="removeParam(param.id)" title="Remove">
+                                    <button class="btn-action remove" @click.stop="removeVariable(variable.id)" title="Remove">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
                             </td>
                         </tr>
-                        <tr v-if="paramPage.data.params.length === 0">
+                        <tr v-if="variablePage.data.variables.length === 0">
                             <td colspan="7" class="text-center py-5 text-muted">
                                 <i class="bi bi-info-circle fs-2 d-block mb-2"></i>
-                                No parameters defined. Click "Add Parameter" to start.
+                                No variables defined. Click "Add Variable" to start.
                             </td>
                         </tr>
                     </tbody>
@@ -68,10 +68,10 @@
             </div>
 
             <div class="mt-4 d-flex justify-content-between align-items-center">
-                <button 
-                    v-if="paramPage.data.params.length > 0" 
-                    class="btn-pro btn-outline-pro" 
-                    @click="saveParams"
+                <button
+                    v-if="variablePage.data.variables.length > 0"
+                    class="btn-pro btn-outline-pro"
+                    @click="saveVariables"
                 >
                     <i class="bi bi-download"></i> Export to File
                 </button>
@@ -81,13 +81,13 @@
             </div>
         </div>
 
-        <!-- Edit Parameter Modal -->
+        <!-- Edit Variable Modal -->
         <EditParamModal
             v-if="showModal"
             :visible="showModal"
-            :param="selectedParam"
+            :variable="selectedVariable"
             @close-modal="closeEditModal"
-            @save-changes="updateParam"
+            @save-changes="updateVariable"
         />
     </div>
 </template>
@@ -107,7 +107,7 @@ export default {
     },
     props: {
         socket: { type: Object, required: true },
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
@@ -115,18 +115,18 @@ export default {
     data() {
         return {
             showModal: false,
-            selectedParam: null,
+            selectedVariable: null,
         };
     },
     watch: {
-        paramPage: {
+        variablePage: {
             handler(newVal) {
                 if (
                     newVal.samples.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
-                    newVal.data.params.length > 0
+                    newVal.data.variables.length > 0
                 ) {
-                    this.addPageDone("params");
+                    this.addPageDone("variables");
                 }
             },
             deep: true,
@@ -137,43 +137,43 @@ export default {
         generateId() {
             return "_" + Math.random().toString(36).slice(2, 9);
         },
-        addParam() {
-            const newParam = {
+        addVariable() {
+            const newVariable = {
                 id: this.generateId(),
-                name: "param_" + (this.paramPage.data.params.length + 1),
+                name: "variable_" + (this.variablePage.data.variables.length + 1),
                 distribution: "",
                 distParam1: null,
                 distParam2: null,
-                scale: 1.0,
-                shift: 0.0,
+                scale: null,
+                shift: null,
             };
-            this.paramPage.data.params.push(newParam);
-            this.openEditModal(newParam);
+            this.variablePage.data.variables.push(newVariable);
+            this.openEditModal(newVariable);
         },
-        removeParam(id) {
-            this.paramPage.data.params = this.paramPage.data.params.filter((param) => param.id !== id);
-            this.refreshParams();
+        removeVariable(id) {
+            this.variablePage.data.variables = this.variablePage.data.variables.filter((variable) => variable.id !== id);
+            this.refreshVariables();
         },
-        openEditModal(param) {
-            this.selectedParam = { ...param };
+        openEditModal(variable) {
+            this.selectedVariable = { ...variable };
             this.showModal = true;
         },
         closeEditModal() {
             this.showModal = false;
-            this.selectedParam = null;
+            this.selectedVariable = null;
         },
-        updateParam(updatedParam) {
-            const index = this.paramPage.data.params.findIndex((param) => param.id === updatedParam.id);
+        updateVariable(updatedVariable) {
+            const index = this.variablePage.data.variables.findIndex((variable) => variable.id === updatedVariable.id);
             if (index !== -1) {
-                this.paramPage.data.params.splice(index, 1, updatedParam);
+                this.variablePage.data.variables.splice(index, 1, updatedVariable);
             }
             this.closeEditModal();
-            this.refreshParams();
+            this.refreshVariables();
         },
-        refreshParams() {
-            this.socket.emit("refresh_variables", this.paramPage.data.params);
+        refreshVariables() {
+            this.socket.emit("refresh_variables", this.variablePage.data.variables);
         },
-        loadParams(event) {
+        loadVariables(event) {
             const file = event.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -181,36 +181,36 @@ export default {
             reader.onload = async (loadEvent) => {
                 try {
                     const data = JSON.parse(loadEvent.target.result);
-                    if (!("params" in data)) {
+                    if (!("variables" in data)) {
                         throw new Error("Invalid file format.");
                     }
-                    this.paramPage.data.params = data["params"];
-                    for (let param of this.paramPage.data.params) {
-                        if (!param.id) param["id"] = this.generateId();
+                    this.variablePage.data.variables = data["variables"];
+                    for (let variable of this.variablePage.data.variables) {
+                        if (!variable.id) variable["id"] = this.generateId();
                     }
                     updated = true;
                 } catch (error) {
                     console.log("Error: ", error.message);
-                    alert("Failed to load parameters: " + error.message);
+                    alert("Failed to load variables: " + error.message);
                 }
             };
             reader.readAsText(file);
             reader.onloadend = () => {
                 if (updated) {
-                    this.refreshParams();
+                    this.refreshVariables();
                 }
                 event.target.value = ''; // Reset input
             };
         },
-        saveParams() {
+        saveVariables() {
             try {
-                let filtered = { params: this.paramPage.data.params.map(({ id, ...rest }) => rest) };
+                let filtered = { variables: this.variablePage.data.variables.map(({ id, ...rest }) => rest) };
                 const data = JSON.stringify(filtered, null, 2);
                 const blob = new Blob([data], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
-                link.download = "paramset.json";
+                link.download = "variableset.json";
                 link.click();
                 URL.revokeObjectURL(url);
             } catch (error) {
@@ -219,13 +219,13 @@ export default {
         },
         isPageDone() {
             const isDone =
-                this.paramPage.data.params.length > 0 &&
-                this.paramPage.data.params.every(
-                    (param) =>
-                        param.name && param.distribution && param.distParam1 !== null && param.distParam2 !== null
+                this.variablePage.data.variables.length > 0 &&
+                this.variablePage.data.variables.every(
+                    (variable) =>
+                        variable.name && variable.distribution && variable.distParam1 !== null && variable.distParam2 !== null
                 );
             if (isDone) {
-                this.addPageDone("params");
+                this.addPageDone("variables");
             }
             return isDone;
         },
@@ -234,7 +234,7 @@ export default {
 </script>
 
 <style scoped>
-.param-page {
+.variable-page {
     max-width: 1000px;
     margin: 0 auto;
 }

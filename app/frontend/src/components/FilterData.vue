@@ -13,7 +13,7 @@
             <div class="modal-body">
                 <h4 class="h6 text-muted text-uppercase fw-bold mb-3">Select Features</h4>
                 <div class="mb-4">
-                    <div v-for="(mode, index) in Object.keys(paramPage.inputStats)" :key="`mode-${index}`" class="form-check mb-2">
+                    <div v-for="(mode, index) in Object.keys(variablePage.inputStats)" :key="`mode-${index}`" class="form-check mb-2">
                         <input
                             class="form-check-input"
                             type="checkbox"
@@ -26,7 +26,7 @@
                 </div>
                 <h4 class="h6 text-muted text-uppercase fw-bold mb-3">Select Effects</h4>
                 <div class="mb-4">
-                    <div v-for="(effect, index) in Object.keys(paramPage.qoiTable)" :key="`effect-${index}`" class="form-check mb-2">
+                    <div v-for="(effect, index) in Object.keys(variablePage.qoiTable)" :key="`effect-${index}`" class="form-check mb-2">
                         <input
                             class="form-check-input"
                             type="checkbox"
@@ -49,14 +49,14 @@
 export default {
     props: {
         surrogatePage: { type: Object, required: true },
-        paramPage: { type: Object, required: true },
+        variablePage: { type: Object, required: true },
         socket: { type: Object, required: true },
     },
     data() {
         return {
             showModal: false,
-            tempSelectedFeats: Object.keys(this.paramPage.inputStats),
-            tempSelectedEffects: Object.keys(this.paramPage.qoiTable),
+            tempSelectedFeats: Object.keys(this.variablePage.inputStats),
+            tempSelectedEffects: Object.keys(this.variablePage.qoiTable),
         };
     },
     methods: {
@@ -66,8 +66,8 @@ export default {
                 return;
             }
             // Get original order arrays
-            const originalFeats = Object.keys(this.paramPage.inputStats);
-            const originalEffects = Object.keys(this.paramPage.qoiTable);
+            const originalFeats = Object.keys(this.variablePage.inputStats);
+            const originalEffects = Object.keys(this.variablePage.qoiTable);
 
             // Sort tempSelectedFeats according to original order
             const orderedFeats = originalFeats.filter((feat) => this.tempSelectedFeats.includes(feat));
