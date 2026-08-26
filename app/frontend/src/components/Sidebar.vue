@@ -83,7 +83,7 @@ const MENU_STRUCTURE = {
     },
     mosaic: {
         items: [
-            { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
+            { page: "upload", label: "Upload Already Trained MOSAIC Model", requires: [] },
             { page: "variables", label: "Variable Definition", requires: [] },
             { page: "sample", label: "Sample And Upload QoI", requires: ["variables"] },
             { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },

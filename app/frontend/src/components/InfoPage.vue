@@ -14,7 +14,7 @@
             <div class="description-text mb-5" v-html="descriptions[mode]"></div>
 
             <div class="action-footer d-flex flex-wrap gap-3 pt-4 border-top">
-                <template v-if="mode === 'surrogate' || mode === 'subtracting'">
+                <template v-if="mode === 'surrogate' || mode === 'subtracting' || mode === 'mosaic'">
                     <button class="btn-pro btn-outline-pro" @click="changePage('variables')">
                         <i class="bi bi-plus-circle"></i> Create New Model
                     </button>
@@ -82,6 +82,7 @@ export default {
                 subtracting: "Probabilistic Weather Effect Modeling",
                 surrogate: "Hybrid Digital Twinning",
                 multiModel: "Multi-Building Design Updating",
+                mosaic: "MOSAIC Modeling",
                 earthquakeResilience: "Assessment of Earthquake Resilience",
                 climateResilience: "Analyzing Climate Resilience",
             },
@@ -111,6 +112,15 @@ export default {
                         <li>Calibrate models across building portfolios</li>
                         <li>Transfer learning between similar structures</li>
                         <li>Reduce computational requirements</li>
+                    </ul>
+                `,
+                mosaic: `
+                    <h3>MOSAIC Modeling</h3>
+                    <p>Train a classification-based data-driven surrogate over frequency and eigenvector degrees-of-approximation, then calibrate it against measurements.</p>
+                    <ul>
+                        <li>Define variables and sample or upload QoI data</li>
+                        <li>Train a MOSAIC model with a configurable resolution and classification method</li>
+                        <li>Link measurements and update the digital twin</li>
                     </ul>
                 `,
                 earthquakeResilience: `

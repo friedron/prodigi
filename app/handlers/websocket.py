@@ -660,6 +660,10 @@ class AppHandler(socketio.AsyncNamespace):
             elif m_type == "LinReg":
                 model = PredictiveModel(variableset, s_labels, m_type)
                 t_cfg = {}
+            elif m_type == "MOSAIC":
+                raise NotImplementedError(
+                    "MOSAIC training is not yet available"
+                )
             elif m_type in ("MDN", "CRPS"):
                 init = {
                     "layers": [{

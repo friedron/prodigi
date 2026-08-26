@@ -57,7 +57,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :sendInChunks="sendInChunks"
             />
             <ParamPage
-                v-if="activePage === 'variables' && mode === 'surrogate'"
+                v-if="activePage === 'variables' && (mode === 'surrogate' || mode === 'mosaic')"
                 v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
@@ -65,7 +65,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :sendInChunks="sendInChunks"
             />
             <SampleQoIPage
-                v-if="activePage === 'sample' && mode === 'surrogate'"
+                v-if="activePage === 'sample'"
                 v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"
@@ -311,6 +311,18 @@ export default {
                         crpsConfig: {
                             trainConfig: {
                                 numSamplers: 4,
+                            },
+                        },
+                        mosaicConfig: {
+                            resolution: 0.6,
+                            maxDoaFrequencies: 4,
+                            maxDoaEigenvectors: 5,
+                            classificationMethod: "SVC",
+                            svcConfig: {
+                                C: 1.0,
+                                kernel: "rbf",
+                                degree: 3,
+                                gamma: "scale",
                             },
                         },
                     },
@@ -608,6 +620,9 @@ export default {
             }
             if (this.mode === "surrogate") {
                 link.download = "model.sm";
+            }
+            if (this.mode === "mosaic") {
+                link.download = "model.msic";
             }
             link.click();
             URL.revokeObjectURL(url);

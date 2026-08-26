@@ -91,7 +91,7 @@
                         <option value="CRPS">CRPS</option>
                     </select>
                 </div>
-                <div class="col-md-6" v-else>
+                <div class="col-md-6" v-if="(mode === 'subtracting' && surrogatePage.modelConfig.predictionType === 'deterministic') || mode === 'surrogate'">
                     <label class="form-label fw-bold d-flex align-items-center gap-1">
                         Surrogate Model Architecture
                         <Tooltip :content="'<p><b>GPCE:</b> Polynomial expansions for uncertainty quantification.<br><b>GBT:</b> Advanced tree boosting.<br><b>DNN:</b> Deep Neural Networks for complex non-linear mappings.</p>'" />
@@ -140,6 +140,87 @@
                         <div class="p-2 border rounded bg-white text-center">
                             <label class="text-muted small text-uppercase d-block fw-bold">Computed Leaves</label>
                             <span class="fw-bold">{{ computeNumOfLeaves }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="surrogatePage.modelConfig.modelType === 'MOSAIC'" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold d-flex align-items-center gap-1">
+                            Resolution
+                            <Tooltip :content="'<p>Resolution used when discretizing the mode/frequency space for classification.</p>'" />
+                        </label>
+                        <input type="number" class="form-control" step="0.1" v-model="surrogatePage.modelConfig.mosaicConfig.resolution" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold d-flex align-items-center gap-1">
+                            Max. DOA of Frequencies
+                            <Tooltip :content="'<p>Maximum degree of approximation used for frequencies.</p>'" />
+                        </label>
+                        <input type="number" class="form-control" step="1" v-model="surrogatePage.modelConfig.mosaicConfig.maxDoaFrequencies" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold d-flex align-items-center gap-1">
+                            Max. DOA of Eigenvectors
+                            <Tooltip :content="'<p>Maximum degree of approximation used for eigenvectors.</p>'" />
+                        </label>
+                        <input type="number" class="form-control" step="1" v-model="surrogatePage.modelConfig.mosaicConfig.maxDoaEigenvectors" />
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold d-flex align-items-center gap-1">
+                            Classification Method
+                            <Tooltip :content="'<p>Algorithm used to classify samples during MOSAIC training.</p>'" />
+                        </label>
+                        <select class="form-select" v-model="surrogatePage.modelConfig.mosaicConfig.classificationMethod">
+                            <option value="SVC">SVC</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12" v-if="surrogatePage.modelConfig.mosaicConfig.classificationMethod === 'SVC'">
+                        <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
+                            <h5 class="mb-0 fs-6 fw-bold">Classifier Settings</h5>
+                            <div class="btn-group btn-group-sm">
+                                <button
+                                    type="button"
+                                    class="btn"
+                                    :class="svcTab === 'basic' ? 'btn-pro' : 'btn-outline-secondary'"
+                                    @click="svcTab = 'basic'"
+                                >Basic</button>
+                                <button
+                                    type="button"
+                                    class="btn"
+                                    :class="svcTab === 'advanced' ? 'btn-pro' : 'btn-outline-secondary'"
+                                    @click="svcTab = 'advanced'"
+                                >Advanced</button>
+                            </div>
+                        </div>
+
+                        <div v-if="svcTab === 'basic'" class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">C</label>
+                                <input type="number" class="form-control" step="0.1" v-model="surrogatePage.modelConfig.mosaicConfig.svcConfig.C" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Kernel</label>
+                                <select class="form-select" v-model="surrogatePage.modelConfig.mosaicConfig.svcConfig.kernel">
+                                    <option value="rbf">rbf</option>
+                                    <option value="linear">linear</option>
+                                    <option value="poly">poly</option>
+                                    <option value="sigmoid">sigmoid</option>
+                                    <option value="precomputed">precomputed</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Degree</label>
+                                <input type="number" class="form-control" step="1" v-model="surrogatePage.modelConfig.mosaicConfig.svcConfig.degree" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Gamma</label>
+                                <input type="text" class="form-control" v-model="surrogatePage.modelConfig.mosaicConfig.svcConfig.gamma" />
+                            </div>
+                        </div>
+                        <div v-else class="hyper-config p-3 rounded bg-light border text-muted">
+                            More SVC parameters coming soon.
                         </div>
                     </div>
                 </div>
@@ -403,7 +484,13 @@ export default {
             selectedFeats: this.variablePage.data.variables.map(v => v.name),
             selectedLabels: this.variablePage.qoiTable ? Object.keys(this.variablePage.qoiTable) : [],
             isTraining: false,
+            svcTab: "basic",
         };
+    },
+    created() {
+        if (this.mode === "mosaic") {
+            this.surrogatePage.modelConfig.modelType = "MOSAIC";
+        }
     },
     watch: {
         surrogatePage: {
