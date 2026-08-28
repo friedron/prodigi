@@ -1,7 +1,7 @@
 <template>
   <div>
     <button class="btn-pro" @click="showModal = true">
-      <i class="bi bi-box-arrow-in-down"></i> Input Loader
+      <i class="bi bi-box-arrow-in-down"></i> Data Loader
     </button>
 
     <Teleport to="body">

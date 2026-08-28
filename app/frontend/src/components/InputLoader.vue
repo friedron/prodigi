@@ -1,6 +1,6 @@
 <template>
     <button class="btn-pro" @click="showInputLoader = true">
-        <i class="bi bi-upload"></i> Input Loader
+        <i class="bi bi-upload"></i> Data Loader
     </button>
 
     <Teleport to="body">

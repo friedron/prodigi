@@ -14,7 +14,7 @@
             <div class="description-text mb-5" v-html="descriptions[mode]"></div>
 
             <div class="action-footer d-flex flex-wrap gap-3 pt-4 border-top">
-                <template v-if="mode === 'surrogate' || mode === 'subtracting' || mode === 'mosaic'">
+                <template v-if="mode === 'surrogate' || mode === 'subtracting' || mode === 'mosaic' || mode === 'inverse'">
                     <button class="btn-pro btn-outline-pro" @click="changePage('variables')">
                         <i class="bi bi-plus-circle"></i> Create New Model
                     </button>
@@ -79,8 +79,8 @@ export default {
         return {
             demoLoading: false,
             titles: {
-                subtracting: "Probabilistic Weather Effect Modeling",
-                surrogate: "Hybrid Digital Twinning",
+                subtracting: "Weather Effect Modeling",
+                surrogate: "Model Calibration — MCMC (Surrogate-Based)",
                 multiModel: "Multi-Building Design Updating",
                 mosaic: "MOSAIC Modeling",
                 earthquakeResilience: "Assessment of Earthquake Resilience",
@@ -88,7 +88,7 @@ export default {
             },
             descriptions: {
                 surrogate: `
-                    <h3>Hybrid Digital Twinning</h3>
+                    <h3>Model Calibration — MCMC (Surrogate-Based)</h3>
                     <p>Create accurate digital twins by combining physics-based models with data-driven surrogate models. This hybrid approach balances computational efficiency with physical accuracy.</p>
                     <ul>
                         <li>Train surrogate models from simulation or real-world data</li>
@@ -97,12 +97,21 @@ export default {
                     </ul>
                 `,
                 subtracting: `
-                    <h3>Subtracting Weather Effects</h3>
+                    <h3>Weather Effect Modeling</h3>
                     <p>Isolate the effects of structural changes by removing weather-related impacts from sensor measurements. This data-driven approach helps identify true structural behavior.</p>
                     <ul>
                         <li>Remove environmental noise from measurements</li>
                         <li>Identify structural anomalies and damage</li>
                         <li>Improve monitoring accuracy</li>
+                    </ul>
+                `,
+                inverse: `
+                    <h3>Model Calibration — Direct Inversion (Regression-Based)</h3>
+                    <p>Analyze building resilience by evaluating both local and global vulnerabilities through linear and non-linear static analyses using AI-based inverse modeling.</p>
+                    <ul>
+                        <li>Train predictive models from input-output data</li>
+                        <li>Perform uncertainty quantification and sensitivity analysis</li>
+                        <li>Detect threshold exceedances and structural anomalies</li>
                     </ul>
                 `,
                 multiModel: `
@@ -122,25 +131,7 @@ export default {
                         <li>Train a MOSAIC model with a configurable resolution and classification method</li>
                         <li>Link measurements and update the digital twin</li>
                     </ul>
-                `,
-                earthquakeResilience: `
-                    <h3>Assessment of Earthquake Resilience</h3>
-                    <p>Evaluate building resilience to seismic events using advanced analysis tools. Identify vulnerabilities and develop mitigation strategies.</p>
-                    <ul>
-                        <li>Perform seismic fragility analysis</li>
-                        <li>Assess structural vulnerability</li>
-                        <li>Plan retrofit strategies</li>
-                    </ul>
-                `,
-                climateResilience: `
-                    <h3>Analyzing Climate Resilience</h3>
-                    <p>Assess building resilience to climate change impacts including temperature variations, precipitation, and extreme weather events.</p>
-                    <ul>
-                        <li>Analyze climate-related structural impacts</li>
-                        <li>Evaluate long-term durability</li>
-                        <li>Plan adaptation measures</li>
-                    </ul>
-                `,
+                `
             }
         };
     },

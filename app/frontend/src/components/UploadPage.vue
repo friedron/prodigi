@@ -11,7 +11,7 @@
             <BackButton :prevPage="'info'" :changePage="changePage" />
         </div>
 
-        <div v-if="localMode === 'surrogate' || localMode === 'subtracting' || localMode === 'mosaic'" class="card-pro mb-4">
+        <div v-if="localMode === 'surrogate' || localMode === 'subtracting' || localMode === 'mosaic' || localMode === 'inverse'" class="card-pro mb-4">
             <div class="d-flex align-items-center justify-content-between">
                 <h2 class="m-0">Upload Trained Model</h2>
                 <InputLoader
@@ -30,6 +30,13 @@
                 />
                 <InputLoader
                     v-if="localMode === 'mosaic'"
+                    :socket="socket"
+                    @load-file="loadModel"
+                    :fileType="'.msic'"
+                    :loadType="'model'"
+                />
+                <InputLoader
+                    v-if="localMode === 'inverse'"
                     :socket="socket"
                     @load-file="loadModel"
                     :fileType="'.msic'"

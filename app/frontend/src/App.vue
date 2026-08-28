@@ -73,7 +73,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :sendInChunks="sendInChunks"
             />
             <ParamPageDD
-                v-if="activePage === 'variables' && mode === 'subtracting'"
+                v-if="activePage === 'variables' && (mode === 'subtracting' || mode === 'inverse')"
                 v-model:variablePage="variablePage"
                 :socket="socket"
                 :changePage="changePage"

@@ -8,7 +8,7 @@
         <div class="modes-grid">
             <div class="mode-card" @click="selectMode('subtracting')">
                 <div class="card-content">
-                    <h3>Probabilistic Weather Effect Modeling</h3>
+                    <h3>Weather Effect Modeling</h3>
                     <p>Construct purely data-driven models directly from input-output measurements. Isolate effects like temperature variations and assess output sensitivities.</p>
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>
@@ -16,7 +16,7 @@
 
             <div class="mode-card" @click="selectMode('surrogate')">
                 <div class="card-content">
-                    <h3>Surrogate-based updating</h3>
+                    <h3>Model Calibration — MCMC (Surrogate-Based)</h3>
                     <p>Create calibrated digital twins by replacing physics-based simulations with surrogate models. Perform UQ, sensitivity analysis, and Bayesian inference.</p>
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>
@@ -24,7 +24,7 @@
 
             <div class="mode-card" @click="selectMode('inverse')">
                 <div class="card-content">
-                    <h3>AI-based inverse modeling</h3>
+                    <h3>Model Calibration — Direct Inversion (Regression-Based)</h3>
                     <p>Analyze building resilience by evaluate both local and global vulnerabilities through linear and non linear static analyses using AI-based inverse modeling.</p>
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>

@@ -44,7 +44,7 @@ const MENU_STRUCTURE = {
             { page: "subtract", label: "Remove External Effects", requires: ["surrogate"] },
             { page: "thresholdExceedance", label: "Detect Threshold Exceedance", requires: ["surrogate"] },
         ],
-        name: "Probabilistic Weather Effect Modeling",
+        name: "Weather Effect Modeling",
     },
     surrogate: {
         items: [
@@ -58,20 +58,19 @@ const MENU_STRUCTURE = {
             { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
             { page: "update", label: "Update / Digital Twining", requires: ["compare"] },
         ],
-        name: "Surrogate-based updating",
+        name: "Model Calibration — MCMC (Surrogate-Based)",
     },
     inverse: {
         items: [
-            { page: "upload", label: "Upload Already Trained Surrogate Predictive Model", requires: [] },
-            { page: "variables", label: "Variable Definition", requires: [] },
-            { page: "sample", label: "Sample And Upload QoI", requires: ["variables"] },
+            { page: "upload", label: "Upload Already Trained Data-Driven Predictive Model", requires: [] },
+            { page: "variables", label: "Upload Features And Labels", requires: [] },
             { page: "exploratory", label: "Exploratory Data Analysis", requires: ["variables"] },
-            { page: "inverse", label: "Inverse Modelling", requires: ["sample"] },
-            { page: "measurements", label: "Definition Of Measurements", requires: ["inverse"] },
-            { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
-            { page: "compute", label: "Compute updated Parameters", requires: ["compare"] },
+            { page: "surrogate", label: "Data-Driven Modeling", requires: ["variables"] },
+            { page: "uq", label: "UQ and Sensitivities", requires: ["surrogate"] },
+            { page: "subtract", label: "Remove External Effects", requires: ["surrogate"] },
+            { page: "thresholdExceedance", label: "Detect Threshold Exceedance", requires: ["surrogate"] },
         ],
-        name: "AI-based inverse modeling",
+        name: "Model Calibration — Direct Inversion (Regression-Based)",
     },
     multiModel: {
         items: [
