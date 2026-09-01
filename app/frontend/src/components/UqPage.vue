@@ -106,7 +106,7 @@
                                 <thead>
                                     <tr>
                                         <th>QoI</th>
-                                        <th v-for="(param, key) in uqPage.sensitivities.partialVariance" :key="key" class="text-end">{{ key }}</th>
+                                        <th v-for="(param, key) in uqPage.sensitivities.partialVariance" :key="key" class="text-end param-col">{{ key }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -127,7 +127,7 @@
                                 <thead>
                                     <tr>
                                         <th>QoI</th>
-                                        <th v-for="(param, key) in uqPage.sensitivities.sobolIndex" :key="key" class="text-end">{{ key }}</th>
+                                        <th v-for="(param, key) in uqPage.sensitivities.sobolIndex" :key="key" class="text-end param-col">{{ key }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -176,7 +176,7 @@
                         <thead>
                             <tr>
                                 <th>QoI</th>
-                                <th v-for="param in surrogatePage.selectedFeats" :key="param" class="text-end">{{ param }}</th>
+                                <th v-for="param in surrogatePage.selectedFeats" :key="param" class="text-end param-col">{{ param }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -524,6 +524,11 @@ export default {
     font-size: 0.75rem;
     text-transform: uppercase;
     color: var(--text-muted);
+}
+
+/* Parameter/QoI name columns are user-defined identifiers - keep their casing */
+.custom-table thead th.param-col {
+    text-transform: none;
 }
 
 .plot-container {

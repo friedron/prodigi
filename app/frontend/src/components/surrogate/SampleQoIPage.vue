@@ -11,8 +11,53 @@
 
         <BackButton :prevPage="'variables'" :changePage="changePage" />
 
+        <!-- MOSAIC Training Data Card -->
+        <div v-if="mode === 'mosaic'" class="card-pro content-card mb-4 mt-4">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                <i class="bi bi-file-earmark-binary fs-4 me-2 text-primary"></i>
+                <h2 class="h4 mb-0">MOSAIC Training Data</h2>
+            </div>
+            <p class="text-muted small">
+                Upload the pre-computed FE analysis results as <code>.npy</code> files, matching the reference notebook workflow.
+                Define variables (previous page) in the same column order as <code>parameters.npy</code>.
+            </p>
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold d-block">Parameters</label>
+                    <label for="mosaicParams" class="btn-pro btn-sm btn-outline-pro mb-2">
+                        <i class="bi bi-upload"></i> Load parameters.npy
+                        <input type="file" id="mosaicParams" @change="loadMosaicParameters" accept=".npy" class="d-none" />
+                    </label>
+                    <div class="small text-muted">
+                        {{ variablePage.mosaic.parametersShape ? `Shape: (${variablePage.mosaic.parametersShape.join(", ")})` : "Not loaded" }}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold d-block">Frequencies</label>
+                    <label for="mosaicFreqs" class="btn-pro btn-sm btn-outline-pro mb-2">
+                        <i class="bi bi-upload"></i> Load frequencies.npy
+                        <input type="file" id="mosaicFreqs" @change="loadMosaicFrequencies" accept=".npy" class="d-none" />
+                    </label>
+                    <div class="small text-muted">
+                        {{ variablePage.mosaic.frequenciesShape ? `Shape: (${variablePage.mosaic.frequenciesShape.join(", ")})` : "Not loaded" }}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold d-block">Eigenvectors</label>
+                    <label for="mosaicEigvecs" class="btn-pro btn-sm btn-outline-pro mb-2">
+                        <i class="bi bi-upload"></i> Load eigenvectors.npy
+                        <input type="file" id="mosaicEigvecs" @change="loadMosaicEigenvectors" accept=".npy" class="d-none" />
+                    </label>
+                    <div class="small text-muted">
+                        {{ variablePage.mosaic.eigenvectorsShape ? `Shape: (${variablePage.mosaic.eigenvectorsShape.join(", ")})` : "Not loaded" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Sampling Configuration Card -->
-        <div class="card-pro content-card mb-4 mt-4">
+        <div v-else class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-dice-5 fs-4 me-2 text-primary"></i>
@@ -63,7 +108,7 @@
         </div>
 
         <!-- QoI Card -->
-        <div class="card-pro content-card mb-4">
+        <div v-if="mode !== 'mosaic'" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-bar-chart-steps fs-4 me-2 text-primary"></i>
@@ -114,7 +159,7 @@
 
         <NextButton
             :nextPage="'exploratory'"
-            :available="variablePage.samples.length > 0 && Object.keys(variablePage.qoiTable).length > 0"
+            :available="mode === 'mosaic' ? mosaicDataReady : (variablePage.samples.length > 0 && Object.keys(variablePage.qoiTable).length > 0)"
             :changePage="changePage"
         />
     </div>
@@ -138,13 +183,26 @@ export default {
     props: {
         socket: { type: Object, required: true },
         variablePage: { type: Object, required: true },
+        mode: { type: String, default: "" },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
     },
+    computed: {
+        mosaicDataReady() {
+            const m = this.variablePage.mosaic;
+            return !!(m && m.parametersShape && m.frequenciesShape && m.eigenvectorsShape);
+        },
+    },
     watch: {
         variablePage: {
             handler(newVal) {
+                if (this.mode === "mosaic") {
+                    if (this.mosaicDataReady && newVal.data.variables.length > 0) {
+                        this.addPageDone("sample");
+                    }
+                    return;
+                }
                 if (
                     newVal.samples.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
@@ -158,6 +216,15 @@ export default {
         },
     },
     methods: {
+        loadMosaicParameters(event) {
+            this.sendInChunks(event.target.files[0], "load_mosaic_parameters", this.socket);
+        },
+        loadMosaicFrequencies(event) {
+            this.sendInChunks(event.target.files[0], "load_mosaic_frequencies", this.socket);
+        },
+        loadMosaicEigenvectors(event) {
+            this.sendInChunks(event.target.files[0], "load_mosaic_eigenvectors", this.socket);
+        },
         loadSampleSettings(event) {
             const file = event.target.files[0];
             if (!file) return;

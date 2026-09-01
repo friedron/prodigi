@@ -11,6 +11,20 @@
 
         <BackButton :prevPage="'variables'" :changePage="changePage" />
 
+        <div v-if="mode === 'mosaic'" class="card-pro content-card mb-4 mt-4">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                <i class="bi bi-graph-up-arrow fs-4 me-2 text-primary"></i>
+                <h2 class="h4 mb-0">Exploratory Data Analysis</h2>
+            </div>
+            <div class="plot-placeholder bg-light">
+                <p class="text-muted mb-0">Exploratory data analysis for MOSAIC models is under development.</p>
+            </div>
+            <div class="mt-4 d-flex justify-content-center">
+                <NextButton :nextPage="'surrogate'" :available="true" :changePage="changePage" />
+            </div>
+        </div>
+
+        <template v-else>
         <div class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-graph-up-arrow fs-4 me-2 text-primary"></i>
@@ -118,6 +132,7 @@
         </div>
 
         <NextButton :nextPage="'surrogate'" :available="true" :changePage="changePage" />
+        </template>
     </div>
 </template>
 
@@ -133,6 +148,7 @@ export default {
         LogoLine,
     },
     props: {
+        mode: { type: String, default: "" },
         variablePage: { type: Object, required: true },
         socket: { type: Object, required: true },
         convertToBase64: { type: Function, required: true },
@@ -149,6 +165,7 @@ export default {
         };
     },
     mounted() {
+        if (this.mode === "mosaic") return;
         this.socket.on("exploratory_plot", (data) => {
             this.convertToBase64(data)
                 .then((base64Image) => { this.plot = base64Image; })
@@ -159,7 +176,7 @@ export default {
                 .then((base64Image) => { this.plot_scatter = base64Image; })
                 .catch((err) => console.error(err));
         });
-        
+
         // Initial plot (socket.io buffers emits until connected, so no need to check connected state)
         this.socket.emit("exploratory_plot", { mode: this.plot_mode });
     },

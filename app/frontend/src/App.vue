@@ -67,6 +67,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <SampleQoIPage
                 v-if="activePage === 'sample'"
                 v-model:variablePage="variablePage"
+                :mode="mode"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
@@ -82,6 +83,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             />
             <Exploratory
                 v-if="activePage === 'exploratory'"
+                :mode="mode"
                 :variablePage="variablePage"
                 :socket="socket"
                 :convertToBase64="convertToBase64"
@@ -240,6 +242,11 @@ export default {
                     inputStats: {},
                     qoiTable: {},
                     samples: [],
+                    mosaic: {
+                        parametersShape: null,
+                        frequenciesShape: null,
+                        eigenvectorsShape: null,
+                    },
                 },
                 surrogatePage: {
                     selectedLayer: null,
@@ -349,6 +356,13 @@ export default {
                     overallTrainMetrics: {},
                     individualTrainMetrics: {},
                     selectedQoIForMetric: null,
+                    mosaicSubdomains: [],
+                    mosaicMode: 1,
+                    mosaicPlots: {
+                        spaceDivision: null,
+                        referenceEigenvectors: null,
+                        referenceCorrelation: null,
+                    },
                 },
                 uqPage: {
                     mode: "global",
@@ -565,6 +579,15 @@ export default {
             const parsed = JSON.parse(data);
             this.variablePage.inputStats = parsed;
         });
+        socket.on("mosaic_parameters_loaded", (data) => {
+            this.variablePage.mosaic.parametersShape = data.shape;
+        });
+        socket.on("mosaic_frequencies_loaded", (data) => {
+            this.variablePage.mosaic.frequenciesShape = data.shape;
+        });
+        socket.on("mosaic_eigenvectors_loaded", (data) => {
+            this.variablePage.mosaic.eigenvectorsShape = data.shape;
+        });
         socket.on("train_result", (data) => {
             this.surrogatePage.trainResult = data;
         });
@@ -574,6 +597,18 @@ export default {
         });
         socket.on("outputQoi", (data) => {
             this.surrogatePage.outputQoI = data;
+        });
+        socket.on("mosaic_subdomains", (data) => {
+            this.surrogatePage.mosaicSubdomains = data;
+        });
+        socket.on("mosaic_space_division_plot", (data) => {
+            this.setImageFromPayload((img) => { this.surrogatePage.mosaicPlots.spaceDivision = img; }, data);
+        });
+        socket.on("mosaic_reference_eigenvectors_plot", (data) => {
+            this.setImageFromPayload((img) => { this.surrogatePage.mosaicPlots.referenceEigenvectors = img; }, data);
+        });
+        socket.on("mosaic_reference_correlation_plot", (data) => {
+            this.setImageFromPayload((img) => { this.surrogatePage.mosaicPlots.referenceCorrelation = img; }, data);
         });
         socket.on("mean_var", (data) => {
             const { mean, variance } = data;

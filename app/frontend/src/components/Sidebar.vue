@@ -91,7 +91,7 @@ const MENU_STRUCTURE = {
             { page: "compare", label: "Link QoI And Measurement", requires: ["measurements"] },
             { page: "update", label: "Update / Digital Twining", requires: ["compare"] },
         ],
-        name: "MOSAIC Modeling",
+        name: "MOSAIC Surrogate Modeling",
     },
 };
 

@@ -37,6 +37,7 @@ ALLOWED_MODULE_PREFIXES = (
     "digital_twinning",
     "gPCE_model",
     "uncertain_variables",
+    "mosaictools",
     "shap",
     "SALib",
     "collections",

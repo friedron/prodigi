@@ -12,7 +12,7 @@
         <BackButton :prevPage="'variables'" :changePage="changePage" />
 
         <!-- Data Configuration Section -->
-        <div class="card-pro content-card mb-4 mt-4">
+        <div v-if="mode !== 'mosaic'" class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-gear-wide-connected fs-4 me-2 text-primary"></i>
                 <h2 class="h4 mb-0">Training & Testing Configuration</h2>
@@ -48,13 +48,34 @@
                     </label>
                     <select class="form-select" v-model="surrogatePage.splitConfig.trainTestSplit">
                         <option value="shuffle">Shuffle</option>
-                        <option value="noshuffle">Don't shuffle</option>
+                        <option value="no_shuffle">Don't shuffle</option>
                         <option value="reverse">Reverse</option>
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Random Seed</label>
                     <input type="number" class="form-control" v-model="surrogatePage.splitConfig.seed" placeholder="None" />
+                </div>
+            </div>
+        </div>
+
+        <div v-else class="card-pro content-card mb-4 mt-4">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                <i class="bi bi-gear-wide-connected fs-4 me-2 text-primary"></i>
+                <h2 class="h4 mb-0">Training Data</h2>
+            </div>
+            <div class="stats-box d-flex gap-4">
+                <div class="stat-item">
+                    <label class="text-muted small text-uppercase fw-bold d-block">Parameters</label>
+                    <span class="h5 mb-0">{{ variablePage.mosaic.parametersShape ? `(${variablePage.mosaic.parametersShape.join(", ")})` : "-" }}</span>
+                </div>
+                <div class="stat-item border-start ps-4">
+                    <label class="text-muted small text-uppercase fw-bold d-block">Frequencies</label>
+                    <span class="h5 mb-0">{{ variablePage.mosaic.frequenciesShape ? `(${variablePage.mosaic.frequenciesShape.join(", ")})` : "-" }}</span>
+                </div>
+                <div class="stat-item border-start ps-4">
+                    <label class="text-muted small text-uppercase fw-bold d-block">Eigenvectors</label>
+                    <span class="h5 mb-0">{{ variablePage.mosaic.eigenvectorsShape ? `(${variablePage.mosaic.eigenvectorsShape.join(", ")})` : "-" }}</span>
                 </div>
             </div>
         </div>
@@ -319,7 +340,7 @@
         </div>
 
         <!-- Selection Section -->
-        <div class="card-pro content-card mb-4">
+        <div v-if="mode !== 'mosaic'" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-list-check fs-4 me-2 text-primary"></i>
                 <h2 class="h4 mb-0">Feature & Label Selection</h2>
@@ -372,6 +393,23 @@
             </div>
         </div>
 
+        <div v-else class="card-pro content-card mb-4">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                <i class="bi bi-list-check fs-4 me-2 text-primary"></i>
+                <h2 class="h4 mb-0">Train MOSAIC Model</h2>
+            </div>
+            <p class="text-muted small">
+                Training uses all {{ variablePage.data.variables.length }} defined variables against the uploaded frequencies and eigenvectors.
+            </p>
+            <div class="pt-3 border-top d-flex justify-content-center">
+                <button class="btn-pro px-5" @click="train" :disabled="isTraining">
+                    <span v-if="isTraining" class="btn-spinner"></span>
+                    <i v-else class="bi bi-lightning-fill"></i>
+                    {{ isTraining ? "Training…" : "Train Model" }}
+                </button>
+            </div>
+        </div>
+
         <!-- Evaluation Results -->
         <div v-if="surrogatePage.trainResult !== ''" class="card-pro content-card mb-4 border-primary">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
@@ -386,60 +424,120 @@
 
             <div class="row g-4 mt-2">
                 <div class="col-md-12 d-flex justify-content-end mb-3">
-                    <OutputLoader 
-                        :title="'Save Model'" 
-                        @save-file="saveModel" 
+                    <OutputLoader
+                        :title="'Save Model'"
+                        @save-file="saveModel"
                     />
                 </div>
 
-                <div class="col-md-6" v-if="Object.keys(surrogatePage.overallTrainMetrics).length > 0">
-                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">Overall Metrics</h5>
-                    <table class="table table-sm custom-table bg-white border shadow-sm">
-                        <thead>
-                            <tr>
-                                <th>Metric</th>
-                                <th class="text-end">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(value, metric) in surrogatePage.overallTrainMetrics" :key="metric">
-                                <td class="fw-bold">{{ metric }}</td>
-                                <td class="text-end font-monospace">{{ value.toFixed(4) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="col-md-6">
-                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">QoI Performance</h5>
-                    <div class="mb-3">
-                        <select class="form-select form-select-sm" v-model="surrogatePage.selectedQoIForMetric">
-                            <option value="" selected disabled>Select QoI for detailed evaluation</option>
-                            <option v-for="effect in surrogatePage.outputQoI" :key="effect" :value="effect">
-                                {{ effect }}
-                            </option>
-                        </select>
+                <template v-if="mode === 'mosaic'">
+                    <div class="col-md-6">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">Number of Subdomains per Mode</h5>
+                        <table class="table table-sm custom-table bg-white border shadow-sm">
+                            <thead>
+                                <tr>
+                                    <th>Mode</th>
+                                    <th class="text-end">Subdomains</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(count, idx) in surrogatePage.mosaicSubdomains" :key="idx">
+                                    <td class="fw-bold">{{ idx + 1 }}</td>
+                                    <td class="text-end font-monospace">{{ count }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    
-                    <table v-if="surrogatePage.selectedQoIForMetric" class="table table-sm custom-table bg-white border shadow-sm">
-                        <thead>
-                            <tr>
-                                <th>Metric</th>
-                                <th class="text-end">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(value, metric) in surrogatePage.individualTrainMetrics" :key="metric">
-                                <td class="fw-bold">{{ metric }}</td>
-                                <td class="text-end font-monospace">{{ value[surrogatePage.selectedQoIForMetric].toFixed(4) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                </template>
+                <template v-else>
+                    <div class="col-md-6" v-if="Object.keys(surrogatePage.overallTrainMetrics).length > 0">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">Overall Metrics</h5>
+                        <table class="table table-sm custom-table bg-white border shadow-sm">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th class="text-end">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(value, metric) in surrogatePage.overallTrainMetrics" :key="metric">
+                                    <td class="fw-bold">{{ metric }}</td>
+                                    <td class="text-end font-monospace">{{ value.toFixed(4) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">QoI Performance</h5>
+                        <div class="mb-3">
+                            <select class="form-select form-select-sm" v-model="surrogatePage.selectedQoIForMetric">
+                                <option value="" selected disabled>Select QoI for detailed evaluation</option>
+                                <option v-for="effect in surrogatePage.outputQoI" :key="effect" :value="effect">
+                                    {{ effect }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <table v-if="surrogatePage.selectedQoIForMetric" class="table table-sm custom-table bg-white border shadow-sm">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th class="text-end">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(value, metric) in surrogatePage.individualTrainMetrics" :key="metric">
+                                    <td class="fw-bold">{{ metric }}</td>
+                                    <td class="text-end font-monospace">{{ value[surrogatePage.selectedQoIForMetric].toFixed(4) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- MOSAIC Variable Space Exploration -->
+        <div v-if="mode === 'mosaic' && surrogatePage.trainResult === 'Done'" class="card-pro content-card mb-4">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                <i class="bi bi-grid-3x3-gap fs-4 me-2 text-primary"></i>
+                <h2 class="h4 mb-0">Variable Space Exploration</h2>
+            </div>
+
+            <div class="row g-3 align-items-end mb-4">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Mode</label>
+                    <input type="number" class="form-control" min="1" :max="surrogatePage.mosaicSubdomains.length || 1"
+                           v-model.number="surrogatePage.mosaicMode" />
+                </div>
+                <div class="col-md-3">
+                    <button class="btn-pro" @click="generateMosaicPlots" :disabled="isGeneratingMosaicPlots">
+                        <span v-if="isGeneratingMosaicPlots" class="btn-spinner"></span>
+                        <i v-else class="bi bi-image"></i>
+                        {{ isGeneratingMosaicPlots ? "Generating…" : "Generate" }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-4" v-if="surrogatePage.mosaicPlots.spaceDivision">
+                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">Space Division</h5>
+                    <img :src="surrogatePage.mosaicPlots.spaceDivision" class="img-fluid plot-img" />
+                </div>
+                <div class="col-md-4" v-if="surrogatePage.mosaicPlots.referenceEigenvectors">
+                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">Reference Eigenvectors</h5>
+                    <img :src="surrogatePage.mosaicPlots.referenceEigenvectors" class="img-fluid plot-img" />
+                </div>
+                <div class="col-md-4" v-if="surrogatePage.mosaicPlots.referenceCorrelation">
+                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">Reference Correlation Matrix</h5>
+                    <img :src="surrogatePage.mosaicPlots.referenceCorrelation" class="img-fluid plot-img" />
                 </div>
             </div>
         </div>
 
-        <NextButton :nextPage="'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
+        <NextButton v-if="mode !== 'mosaic'" :nextPage="'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
+        <NextButton v-if="mode == 'mosaic'" :nextPage="'measurements'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
         
         <EditLayerModal
             v-if="showModal"
@@ -484,6 +582,7 @@ export default {
             selectedFeats: this.variablePage.data.variables.map(v => v.name),
             selectedLabels: this.variablePage.qoiTable ? Object.keys(this.variablePage.qoiTable) : [],
             isTraining: false,
+            isGeneratingMosaicPlots: false,
             svcTab: "basic",
         };
     },
@@ -561,7 +660,7 @@ export default {
             this.closeModal();
         },
         train() {
-            if (this.selectedFeats.length === 0 || this.selectedLabels.length === 0) {
+            if (this.mode !== "mosaic" && (this.selectedFeats.length === 0 || this.selectedLabels.length === 0)) {
                 alert("Please select at least one feature and one label to train the model.");
                 return;
             }
@@ -582,6 +681,14 @@ export default {
         saveModel() {
             this.socket.emit("save_model");
         },
+        generateMosaicPlots() {
+            if (!this.surrogatePage.mosaicMode) return;
+            this.isGeneratingMosaicPlots = true;
+            this._mosaicPlotsPending = 3;
+            this.socket.emit("mosaic_space_division", this.surrogatePage.mosaicMode);
+            this.socket.emit("mosaic_reference_eigenvectors", this.surrogatePage.mosaicMode);
+            this.socket.emit("mosaic_reference_correlation", this.surrogatePage.mosaicMode);
+        },
     },
     mounted() {
         // The backend always emits train_result (either "Done" or an
@@ -591,9 +698,24 @@ export default {
             this.isTraining = false;
         };
         this.socket.on("train_result", this._trainResultHandler);
+        this._mosaicPlotHandler = () => {
+            this._mosaicPlotsPending = Math.max(0, (this._mosaicPlotsPending || 0) - 1);
+            if (this._mosaicPlotsPending === 0) this.isGeneratingMosaicPlots = false;
+        };
+        this.socket.on("mosaic_space_division_plot", this._mosaicPlotHandler);
+        this.socket.on("mosaic_reference_eigenvectors_plot", this._mosaicPlotHandler);
+        this.socket.on("mosaic_reference_correlation_plot", this._mosaicPlotHandler);
+        this._mosaicPlotErrorHandler = () => {
+            this.isGeneratingMosaicPlots = false;
+        };
+        this.socket.on("error", this._mosaicPlotErrorHandler);
     },
     beforeUnmount() {
         this.socket.off("train_result", this._trainResultHandler);
+        this.socket.off("mosaic_space_division_plot", this._mosaicPlotHandler);
+        this.socket.off("mosaic_reference_eigenvectors_plot", this._mosaicPlotHandler);
+        this.socket.off("mosaic_reference_correlation_plot", this._mosaicPlotHandler);
+        this.socket.off("error", this._mosaicPlotErrorHandler);
     },
     computed: {
         computeNumOfLeaves() {

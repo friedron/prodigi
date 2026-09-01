@@ -82,7 +82,7 @@ export default {
                 subtracting: "Weather Effect Modeling",
                 surrogate: "Model Calibration — MCMC (Surrogate-Based)",
                 multiModel: "Multi-Building Design Updating",
-                mosaic: "MOSAIC Modeling",
+                mosaic: "MOSAIC Surrogate Modeling",
                 earthquakeResilience: "Assessment of Earthquake Resilience",
                 climateResilience: "Analyzing Climate Resilience",
             },
@@ -124,7 +124,7 @@ export default {
                     </ul>
                 `,
                 mosaic: `
-                    <h3>MOSAIC Modeling</h3>
+                    <h3>MOSAIC Surrogate Modeling</h3>
                     <p>Train a classification-based data-driven surrogate over frequency and eigenvector degrees-of-approximation, then calibrate it against measurements.</p>
                     <ul>
                         <li>Define variables and sample or upload QoI data</li>

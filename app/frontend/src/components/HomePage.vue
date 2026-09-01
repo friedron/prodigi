@@ -40,7 +40,7 @@
 
             <div class="mode-card" @click="selectMode('mosaic')">
                 <div class="card-content">
-                    <h3>MOSAIC Modeling</h3>
+                    <h3>MOSAIC Surrogate Modeling</h3>
                     <p>Train classification-based data-driven models over frequency and eigenvector degrees-of-approximation, then calibrate them against measurements.</p>
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>

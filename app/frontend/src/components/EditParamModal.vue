@@ -63,7 +63,7 @@
                         <label for="optional" class="form-label text-muted small text-uppercase fw-bold">Advanced Settings (Optional)</label>
                         <select id="optional" v-model="variable.optional" class="mb-3">
                             <option value="" selected>None</option>
-                            <option value="bounds">Set Truncation Bounds</option>
+                            <option value="bounds">Set Bounds</option>
                             <option value="moments">Set Moments</option>
                         </select>
 
