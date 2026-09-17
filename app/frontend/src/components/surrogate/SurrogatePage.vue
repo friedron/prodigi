@@ -101,7 +101,7 @@
             </div>
 
             <div class="row mb-4">
-                <div class="col-md-6" v-if="mode === 'subtracting' && surrogatePage.modelConfig.predictionType === 'probabilistic'">
+                <div class="col-md-6" v-if="(mode === 'subtracting' && surrogatePage.modelConfig.predictionType === 'probabilistic') || mode === 'inverse'">
                     <label class="form-label fw-bold d-flex align-items-center gap-1">
                         Surrogate Model Architecture
                         <Tooltip :content="'<p><b>MDN:</b> Mixture Density Network, predicts a full probability distribution as a mixture of Gaussians.<br><b>CRPS:</b> Trained directly against the Continuous Ranked Probability Score for probabilistic forecasts.</p>'" />
@@ -346,11 +346,16 @@
                 <h2 class="h4 mb-0">Feature & Label Selection</h2>
             </div>
 
+            <p v-if="mode === 'inverse'" class="text-muted small">
+                In direct inversion the model input is the <b>measured response</b> and the model output
+                is the <b>parameter to infer</b> — the reverse of a forward surrogate.
+            </p>
+
             <div class="row g-4">
                 <div class="col-md-6">
                     <div class="selection-box border rounded p-3 bg-white">
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <span class="fw-bold">Features (Input)</span>
+                            <span class="fw-bold">{{ mode === 'inverse' ? 'Measured Responses (model input)' : 'Features (Input)' }}</span>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('variables', true)">All</button>
                                 <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('variables', false)">None</button>
@@ -368,7 +373,7 @@
                 <div class="col-md-6">
                     <div class="selection-box border rounded p-3 bg-white">
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <span class="fw-bold">Labels (Output)</span>
+                            <span class="fw-bold">{{ mode === 'inverse' ? 'Parameters to Infer (model output)' : 'Labels (Output)' }}</span>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('labels', true)">All</button>
                                 <button class="btn btn-outline-secondary py-0 px-2" @click="toggleAll('labels', false)">None</button>
@@ -536,7 +541,8 @@
             </div>
         </div>
 
-        <NextButton v-if="mode !== 'mosaic'" :nextPage="'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
+        <NextButton v-if="mode !== 'mosaic' && mode !== 'inverse'" :nextPage="'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
+        <NextButton v-if="mode === 'inverse'" :nextPage="'plot'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
         <NextButton v-if="mode == 'mosaic'" :nextPage="'measurements'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
         
         <EditLayerModal

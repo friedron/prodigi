@@ -15,17 +15,30 @@
         <div class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-cloud-arrow-up fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">Reference Data Setup</h2>
+                <h2 class="h4 mb-0">{{ isInverse ? "Training Data Setup" : "Reference Data Setup" }}</h2>
             </div>
-            
-            <p class="text-muted mb-4">Upload the reference period datasets (Input Features and Output QoI) to initialize the data-driven analysis.</p>
+
+            <p v-if="isInverse" class="text-muted mb-4">
+                The direct-inversion model is a regression from <b>measured responses → parameters</b>:
+                what a forward model produces as output is the input here, and its input is the output.
+                Upload the measured responses as the <b>model input</b> and the corresponding parameter
+                values as the <b>model output</b>.
+            </p>
+            <p v-else class="text-muted mb-4">Upload the reference period datasets (Input Features and Output QoI) to initialize the data-driven analysis.</p>
 
             <div class="row g-4">
                 <div class="col-md-6">
                     <div class="upload-zone p-3 border rounded bg-light">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <span class="fw-bold">Input Features (.csv)</span>
-                            <InputLoaderExtended :socket="socket" @load-file="loadInput" />
+                            <span class="fw-bold">{{ isInverse ? "Measured Responses — model input (.csv)" : "Input Features (.csv)" }}</span>
+                            <InputLoaderExtended v-if="!isInverse" :socket="socket" @load-file="loadInput" />
+                            <InputLoader
+                                v-else
+                                :socket="socket"
+                                @load-file="loadInput"
+                                :fileType="'.csv'"
+                                :loadType="'features'"
+                            />
                         </div>
                         <div v-if="features_file" class="small text-success d-flex align-items-center">
                             <i class="bi bi-check-circle-fill me-1"></i> Loaded: {{ features_file }}
@@ -35,11 +48,11 @@
                 <div class="col-md-6">
                     <div class="upload-zone p-3 border rounded bg-light">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <span class="fw-bold">Output QoI (.csv, .unv)</span>
+                            <span class="fw-bold">{{ isInverse ? "Parameters to Infer — model output (.csv)" : "Output QoI (.csv, .unv)" }}</span>
                             <InputLoader
                                 :socket="socket"
                                 @load-file="loadOutput"
-                                :fileType="'.csv, .unv'"
+                                :fileType="isInverse ? '.csv' : '.csv, .unv'"
                                 :loadType="'labels'"
                             />
                         </div>
@@ -56,7 +69,7 @@
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-calculator fs-4 me-2 text-primary"></i>
-                    <h2 class="h4 mb-0">Approximated Distributions</h2>
+                    <h2 class="h4 mb-0">{{ isInverse ? "Approximated Distributions (model input)" : "Approximated Distributions" }}</h2>
                 </div>
                 <button class="btn-pro btn-outline-pro btn-sm" @click="saveVariables">
                     <i class="bi bi-download"></i> Export Variables
@@ -89,7 +102,7 @@
         <div v-if="Object.keys(variablePage.inputStats).length > 0" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-table fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">Input Summary Statistics</h2>
+                <h2 class="h4 mb-0">{{ isInverse ? "Model Input Summary Statistics (measured responses)" : "Input Summary Statistics" }}</h2>
             </div>
             
             <div class="table-responsive">
@@ -128,7 +141,7 @@
         <div v-if="Object.keys(variablePage.qoiTable).length > 0" class="card-pro content-card mb-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-clipboard-data fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">Output Summary Statistics</h2>
+                <h2 class="h4 mb-0">{{ isInverse ? "Model Output Summary Statistics (parameters)" : "Output Summary Statistics" }}</h2>
             </div>
 
             <div class="table-responsive">
@@ -191,6 +204,7 @@ export default {
     props: {
         socket: { type: Object, required: true },
         variablePage: { type: Object, required: true },
+        mode: { type: String, default: "subtracting" },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
@@ -220,6 +234,9 @@ export default {
         },
     },
     computed: {
+        isInverse() {
+            return this.mode === "inverse";
+        },
         filteredQoi() {
             return Object.entries(this.variablePage.qoiTable).filter(([key]) => key !== "Datetime" && key !== "mode id");
         },

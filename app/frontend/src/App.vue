@@ -17,6 +17,7 @@ import SampleQoIPage from "./components/surrogate/SampleQoIPage.vue";
 import CompareMeasurement from "./components/CompareMeasurement.vue";
 import Exploratory from "./components/subtracting/Exploratory.vue";
 import ThresholdExceedance from "./components/subtracting/ThresholdExceedance.vue";
+import PredictedVsFeaturePage from "./components/PredictedVsFeaturePage.vue";
 import LoadingIndicator from "./components/LoadingIndicator.vue";
 </script>
 <template>
@@ -76,6 +77,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <ParamPageDD
                 v-if="activePage === 'variables' && (mode === 'subtracting' || mode === 'inverse')"
                 v-model:variablePage="variablePage"
+                :mode="mode"
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
@@ -97,6 +99,18 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
+            />
+            <PredictedVsFeaturePage
+                v-if="activePage === 'plot'"
+                :mode="mode"
+                :variablePage="variablePage"
+                :surrogatePage="surrogatePage"
+                :socket="socket"
+                :changePage="changePage"
+                :addPageDone="addPageDone"
+                :sendInChunks="sendInChunks"
+                :convertToBase64="convertToBase64"
+                @set-loading="setLoading"
             />
             <UqPage
                 v-if="activePage === 'uq'"
@@ -218,6 +232,7 @@ export default {
         ThresholdExceedance,
         CompareMeasurement,
         Exploratory,
+        PredictedVsFeaturePage,
     },
     methods: {
         getDefaultData() {
@@ -533,6 +548,15 @@ export default {
         });
         socket.on("error", (data) => {
             console.log("error: ", data);
+            // A chunked upload that fails validation can emit the same error
+            // once per chunk; collapse rapid duplicates so we don't stack alerts.
+            const now = Date.now();
+            if (data === this._lastError && now - (this._lastErrorAt || 0) < 3000) {
+                this.setLoading(false);
+                return;
+            }
+            this._lastError = data;
+            this._lastErrorAt = now;
             alert("Server error: " + data);
             this.setLoading(false);
         });

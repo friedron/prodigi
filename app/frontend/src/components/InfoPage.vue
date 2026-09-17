@@ -107,11 +107,15 @@ export default {
                 `,
                 inverse: `
                     <h3>Model Calibration — Direct Inversion (Regression-Based)</h3>
-                    <p>Analyze building resilience by evaluating both local and global vulnerabilities through linear and non-linear static analyses using AI-based inverse modeling.</p>
+                    <p>Calibrate a model by learning the inverse map directly: a regression from
+                    <b>measured responses → parameters</b>, trained on simulated pairs. The model input
+                    is what a forward model produces as output, and the model output is its input —
+                    so at inference a single forward pass turns a measurement into a parameter estimate,
+                    with no per-measurement MCMC.</p>
                     <ul>
-                        <li>Train predictive models from input-output data</li>
-                        <li>Perform uncertainty quantification and sensitivity analysis</li>
-                        <li>Detect threshold exceedances and structural anomalies</li>
+                        <li>Upload measured responses as the model input and parameters as the model output</li>
+                        <li>Train a probabilistic regressor (MDN or CRPS) for calibrated uncertainty</li>
+                        <li>Inspect predicted parameter vs. response with confidence bands</li>
                     </ul>
                 `,
                 multiModel: `

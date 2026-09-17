@@ -33,7 +33,11 @@ from utils.preprocess_modeshape_data import (
     scatter_plot,
 )
 import utils.get_openmeteo_data as openmeteo
-from utils.probabilistic_models import MDNPredictiveModel, CRPSPredictiveModel
+from utils.probabilistic_models import (
+    MDNPredictiveModel,
+    CRPSPredictiveModel,
+    plot_predicted_vs_feature,
+)
 from handlers.rate_limiter import RateLimiter
 from handlers.safe_unpickle import restricted_loads
 
@@ -383,69 +387,83 @@ class AppHandler(socketio.AsyncNamespace):
                                     loaded_event="mosaic_eigenvectors_loaded", error_label="Load eigenvectors error")
 
     async def on_qoi_unv(self, sid, data):
-        if "weather_full" not in self.data[sid]:
-            await self.emit("error", "Please load weather data first", to=sid)
+        # Consume the upload first so the buffered chunks are always drained and
+        # any validation error is emitted once (on the final chunk) rather than
+        # once per chunk.
+        retrieved_file, filename = await self.recieve_chunks(sid, data)
+        if retrieved_file is None:
             return
+        if "weather_full" not in self.data[sid]:
+            await self.emit(
+                "error",
+                "A .unv QoI file needs weather data first: use the Input Features "
+                "loader to fetch weather from the API (or upload a plain .csv QoI "
+                "file instead).",
+                to=sid,
+            )
+            return
+        if self.data[sid].get("sample") is None:
+            await self.emit("error", "Please load the input features before the QoI file.", to=sid)
+            return
+        temp_path = None
         try:
             fd, temp_path = tempfile.mkstemp(suffix=".unv")
-            retrieved_file, filename, = await self.recieve_chunks(sid, data)
-            if retrieved_file is not None:
-                with os.fdopen(fd, 'wb') as tmp:
-                    tmp.write(retrieved_file)
+            with os.fdopen(fd, 'wb') as tmp:
+                tmp.write(retrieved_file)
 
-                def _process_unv(path, weather_full, x_cols):
-                    df = ppm.df_from_unv(path)
-                    modeshapes_df = ppm.merge_dataframes(df, weather_full)
-                    modes = sorted(df['mode_id'].unique().tolist())
-                    modeshapes_dict = ppm.separate__and_flip_modes(modeshapes_df)
-                    modeshapes_df = ppm.merge_modes(modeshapes_dict)
+            def _process_unv(path, weather_full, x_cols):
+                df = ppm.df_from_unv(path)
+                modeshapes_df = ppm.merge_dataframes(df, weather_full)
+                modes = sorted(df['mode_id'].unique().tolist())
+                modeshapes_dict = ppm.separate__and_flip_modes(modeshapes_df)
+                modeshapes_df = ppm.merge_modes(modeshapes_dict)
 
-                    # Only prune constant *target* columns (frequency/modeshapes) -
-                    # weather predictor columns must survive even if constant over this window.
-                    protected_cols = [c for c in modeshapes_df.columns if c in x_cols or c in ('Datetime', 'mode_id')]
-                    reduced = ppm.remove_constant_columns(modeshapes_df.drop(columns=protected_cols))
-                    modeshapes_df = pd.concat([modeshapes_df[protected_cols], reduced], axis=1)
+                # Only prune constant *target* columns (frequency/modeshapes) -
+                # weather predictor columns must survive even if constant over this window.
+                protected_cols = [c for c in modeshapes_df.columns if c in x_cols or c in ('Datetime', 'mode_id')]
+                reduced = ppm.remove_constant_columns(modeshapes_df.drop(columns=protected_cols))
+                modeshapes_df = pd.concat([modeshapes_df[protected_cols], reduced], axis=1)
 
-                    # select_cols builds a UniformDistribution(min, max) per x_col, which
-                    # requires min != max - drop weather columns that are constant over
-                    # this UNV's time window since they carry no information anyway.
-                    x_cols = [c for c in x_cols if modeshapes_df[c].min() != modeshapes_df[c].max()]
+                # select_cols builds a UniformDistribution(min, max) per x_col, which
+                # requires min != max - drop weather columns that are constant over
+                # this UNV's time window since they carry no information anyway.
+                x_cols = [c for c in x_cols if modeshapes_df[c].min() != modeshapes_df[c].max()]
 
-                    y_cols = 'frequency+modeshapes'
-                    X, y, _, _ = ppm.select_cols(modeshapes_df, modes, x_cols, y_cols)
-                    mask = y.notna().all(axis=1)
-                    y = y[mask]
-                    X = X.loc[mask]
-                    return X, y
+                y_cols = 'frequency+modeshapes'
+                X, y, _, _ = ppm.select_cols(modeshapes_df, modes, x_cols, y_cols)
+                mask = y.notna().all(axis=1)
+                y = y[mask]
+                X = X.loc[mask]
+                return X, y
 
-                X, y = await asyncio.to_thread(
-                    _process_unv,
-                    temp_path,
-                    self.data[sid]["weather_full"],
-                    self.data[sid]["sample"].columns.tolist(),
-                )
-                if X.shape[1] == 0:
-                    await self.emit(
-                        "error",
-                        "All weather predictors were constant over this UNV file's "
-                        "time window (recording session shorter than the weather "
-                        "data's resolution) and were dropped - no usable features "
-                        "remain. Fetch weather data at a finer resolution or use a "
-                        "longer UNV recording.",
-                        to=sid,
-                    )
-                    return
-
-                self.data[sid]["sample"] = X
-                self.data[sid]["qoi"] = y
+            X, y = await asyncio.to_thread(
+                _process_unv,
+                temp_path,
+                self.data[sid]["weather_full"],
+                self.data[sid]["sample"].columns.tolist(),
+            )
+            if X.shape[1] == 0:
                 await self.emit(
-                    "qoi", self.data[sid]["qoi"].describe().to_json(), to=sid
+                    "error",
+                    "All weather predictors were constant over this UNV file's "
+                    "time window (recording session shorter than the weather "
+                    "data's resolution) and were dropped - no usable features "
+                    "remain. Fetch weather data at a finer resolution or use a "
+                    "longer UNV recording.",
+                    to=sid,
                 )
-                await self.emit("labels_loaded", {"filename": filename}, to=sid)
+                return
+
+            self.data[sid]["sample"] = X
+            self.data[sid]["qoi"] = y
+            await self.emit(
+                "qoi", self.data[sid]["qoi"].describe().to_json(), to=sid
+            )
+            await self.emit("labels_loaded", {"filename": filename}, to=sid)
         except Exception as e:
             await self.emit("error", f"Error handling event load_unv: {str(e)}", to=sid)
         finally:
-            if os.path.exists(temp_path):
+            if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
     async def on_load_zmean(self, sid, data):
@@ -783,6 +801,9 @@ class AppHandler(socketio.AsyncNamespace):
                 await asyncio.to_thread(model.train, x_t, y_t, t_cfg)
                 ind_m, over_m = await asyncio.to_thread(model.evaluate_model, y_t, x_v, y_v)
                 self.data[sid]["model"] = model
+                self.data[sid]["train_val_split"] = {
+                    "x_train": x_t, "x_val": x_v, "y_train": y_t, "y_val": y_v,
+                }
                 await self.emit("outputQoi", y_t.columns.tolist(), to=sid)
                 await self.emit("train_result", "Done", to=sid)
                 await self.emit("train_metrics", {"individual": ind_m.to_dict(), "overall": over_m}, to=sid)
@@ -857,6 +878,60 @@ class AppHandler(socketio.AsyncNamespace):
             await self.emit("predict", m.predict(pdf).tolist(), to=sid)
         except Exception as e:
             await self.emit("error", f"Prediction error: {e}", to=sid)
+
+    async def on_load_eval_set(self, sid, data):
+        """Optional held-out evaluation set for the Predicted-vs-Feature plot: a
+        single CSV holding both feature and QoI columns (the Granada workflow's
+        'future period' set). Split into features/labels at plot time against the
+        trained model's known column names."""
+        try:
+            complete, name = await self.recieve_chunks(sid, data)
+            if not complete: return
+            df = await asyncio.to_thread(pd.read_csv, io.BytesIO(complete))
+            self.data[sid]["eval_set"] = df
+            await self.emit("eval_set_loaded", {"filename": name, "rows": len(df)}, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Load evaluation set error: {e}", to=sid)
+
+    async def on_predicted_vs_feature(self, sid, data):
+        try:
+            if not await self._check_rate_limit(sid): return
+            model = self.data[sid].get("model")
+            split = self.data[sid].get("train_val_split")
+            if model is None or split is None:
+                await self.emit("error", "Train a model before plotting.", to=sid)
+                return
+            if not hasattr(model, "predict_samples"):
+                await self.emit("error", "This plot needs a probabilistic model (MDN or CRPS).", to=sid)
+                return
+
+            feature = data["feature"]
+            qoi = data.get("qoi") or None
+            ci_level = float(data.get("ciLevel") or 0.95)
+            n_samples = int(data.get("nSamples") or 2000)
+
+            x_test = y_test = None
+            eval_df = self.data[sid].get("eval_set")
+            if eval_df is not None:
+                feat_cols = list(model.Q.variable_names())
+                qoi_cols = list(model.QoI_names)
+                missing = [c for c in feat_cols + qoi_cols if c not in eval_df.columns]
+                if missing:
+                    await self.emit("error", f"Evaluation set is missing columns: {missing}", to=sid)
+                    return
+                keep = eval_df[feat_cols + qoi_cols].dropna()
+                x_test, y_test = keep[feat_cols], keep[qoi_cols]
+
+            fig = await asyncio.to_thread(
+                plot_predicted_vs_feature,
+                model, split["x_train"], split["x_val"], split["y_train"], split["y_val"],
+                feature, x_test, y_test, qoi, ci_level, n_samples,
+            )
+            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            await self.emit("predicted_vs_feature_plot", binary_data, to=sid)
+        except Exception as e:
+            logging.error(f"Predicted-vs-feature plot error: {e}")
+            await self.emit("error", f"Error generating plot: {e}", to=sid)
 
     async def on_mean_var(self, sid):
         try:
