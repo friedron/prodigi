@@ -91,6 +91,12 @@ const MENU_STRUCTURE = {
         ],
         name: "MOSAIC Surrogate Modeling",
     },
+    climate: {
+        items: [
+            { page: "climate", label: "Analysis", requires: [] },
+        ],
+        name: "Climate Resilience",
+    },
 };
 
 export default {

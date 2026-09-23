@@ -41,6 +41,9 @@ CLAUDE.md
 skills-lock.json
 .cache.sqlite
 
+# Precomputed climate resilience grid data
+app/processed_climate_data
+
 # Editor directories and files
 .idea/
 .DS_Store

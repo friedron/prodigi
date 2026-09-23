@@ -180,6 +180,16 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :isLoading="isLoading"
                 @set-loading="setLoading"
             />
+            <ClimateResilience
+                v-if="activePage === 'climate'"
+                v-model:climateResiliencePage="climateResiliencePage"
+                :mode="mode"
+                :socket="socket"
+                :changePage="changePage"
+                :addPageDone="addPageDone"
+                :isLoading="isLoading"
+                @set-loading="setLoading"
+            />
         </div>
         <div class="footer">
             <img
@@ -207,6 +217,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
 
 <script>
 import socket from "./socket";
+import ClimateResilience from "./components/climateResilience/ClimateResilience.vue";
 
 export default {
     data() {
@@ -222,6 +233,7 @@ export default {
         ParamPageDD,
         SurrogatePage,
         UqPage,
+        ClimateResilience,
         MeasurementsPage,
         MeasurementsPageMulti,
         SubtractEffects,
@@ -419,6 +431,16 @@ export default {
                     multiPlots: [],
                     mean: null,
                     variance: null,
+                },
+                climateResiliencePage: {
+                    longitude: 11.2499,
+                    latitude: 43.7874,
+                    city: null,
+                    country: null,
+                    experiment: null,
+                    variable: null,
+                    output: null,
+                    models: [],
                 },
             };
         },

@@ -1,13 +1,17 @@
 import asyncio
+import base64
 import io
 import json
 import logging
 import os
 import pickle
+import struct
+import sys
 import tempfile
 import time
 import uuid
 import functools
+import bimquake
 import pandas as pd
 import numpy as np
 import socketio
@@ -16,6 +20,10 @@ from tornado.ioloop import PeriodicCallback
 
 # Science & Engineering imports
 import plotly.io as pio
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table as RLTable, TableStyle
 
 # Installed packages
 import mosaictools
@@ -25,6 +33,9 @@ from digital_twinning.utils.object_utils import generate_stdrn_simparamset
 from uncertain_variables.variable_set import VariableSet
 from uncertain_variables.variable import Variable
 from uncertain_variables.distributions import NormalDistribution, UniformDistribution, LogNormalDistribution, BetaDistribution, ExponentialDistribution, TranslatedDistribution
+import utils.climate_resilience as cr
+import utils.climate_plotting as cp
+
 
 
 # Local library imports
@@ -1190,6 +1201,167 @@ class AppHandler(socketio.AsyncNamespace):
             await self.emit("update_done", to=sid)
         except Exception as e:
             await self.emit("error", str(e), to=sid)
+
+    # --- Climate Resilience Handlers ---
+    _CLIMATE_VARIABLE_LABELS = {
+        "tasmax": "Maximum Temperature [°C]",
+        "tasmin": "Minimum Temperature [°C]",
+        "pr": "Precipitation [mm]",
+        "sfcWind": "Wind Speed [ms⁻¹]",
+    }
+    _CLIMATE_OUTPUT_LABELS = {
+        "FC": "Factor of Change of Characteristic value",
+        "Charact": "Characteristic Value",
+        "Mean": "Mean Value",
+        "Cov": "Coefficient of Variation",
+    }
+
+    async def _generate_climate_report_bytes(self, sid, data):
+        report = self.data[sid].get("climate_report")
+        if not report:
+            raise ValueError("Run the climate analysis before saving a report.")
+
+        location = self.data[sid].get("location_data", {})
+
+        styles = getSampleStyleSheet()
+        elements = [
+            Paragraph("Climate Exposure Report", styles["Title"]),
+            Spacer(1, 12),
+            Paragraph(f"Building: {data.get('building_name', '')}", styles["Normal"]),
+            Paragraph(f"Address: {data.get('address', '')}", styles["Normal"]),
+            Paragraph(f"Author: {data.get('author', '')}", styles["Normal"]),
+            Paragraph(f"Owner: {data.get('owner', '')}", styles["Normal"]),
+            Paragraph(f"Location: {location.get('city', '')}, {location.get('country', '')}", styles["Normal"]),
+            Paragraph(
+                "Indicator: {} — {}".format(
+                    self._CLIMATE_OUTPUT_LABELS.get(report["output"], report["output"]),
+                    self._CLIMATE_VARIABLE_LABELS.get(report["variable"], report["variable"]),
+                ),
+                styles["Normal"],
+            ),
+            Spacer(1, 16),
+        ]
+
+        chart_png = self.fig_to_binary(report["figure"])
+        elements.append(RLImage(io.BytesIO(chart_png), width=460, height=290))
+        elements.append(Spacer(1, 16))
+
+        table_df = report["table"]
+        table_rows = [["Model"] + table_df.columns.tolist()]
+        table_rows += [[str(idx)] + [f"{val:.3f}" for val in row.values] for idx, row in table_df.iterrows()]
+        pdf_table = RLTable(table_rows, hAlign="LEFT")
+        pdf_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("FONTSIZE", (0, 0), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(pdf_table)
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
+        doc.build(elements)
+        buf.seek(0)
+        return buf.read()
+
+    async def on_get_climate_report_pdf(self, sid, data):
+        try:
+            pdf_bytes = await self._generate_climate_report_bytes(sid, data)
+            pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            await self.emit("climate_report_pdf", {"filename": "Climate_Exposure_Report.pdf", "file": pdf_base64}, to=sid)
+        except Exception as e:
+            error_line = f"{e.__class__.__name__} on line {sys.exc_info()[-1].tb_lineno}: {e}"
+            print(error_line)
+            await self.emit("error", error_line, to=sid)
+
+    async def on_validate_location_climate(self, sid, data):
+        longitude = data.get("longitude")
+        latitude = data.get("latitude")
+        try:
+            city, country = cr.coordinate_check(latitude, longitude)
+            self.data[sid]["location_data"] = {
+                "city": city,
+                "country": country,
+            }
+            plotly = bimquake.get_map(latitude, longitude, city, country)
+            await self.emit("plotly_map", plotly._repr_html_(), to=sid)
+            await self.emit(
+                "location_data",
+                {
+                    "module": "climate",
+                    "city": self.data[sid]["location_data"]["city"],
+                    "country": self.data[sid]["location_data"]["country"],
+                },
+                to=sid,
+            )
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            await self.emit("error", str(e), to=sid)
+
+    async def on_select_climate_data(self, sid, data):
+        _BDATA_STRUCT = {'f8': ('d', 8), 'f4': ('f', 4), 'i4': ('i', 4), 'u4': ('I', 4), 'i2': ('h', 2), 'u2': ('H', 2)}
+
+        def _decode_bdata(obj):
+            """Recursively decode plotly 6.x binary-encoded arrays to plain Python lists.
+            Plotly 6.x stores numpy arrays as {'dtype': 'f8', 'bdata': '<base64>'};
+            Plotly.js 2.x cannot parse this format so we decode to plain lists."""
+            if isinstance(obj, dict):
+                if 'bdata' in obj and 'dtype' in obj and obj['dtype'] in _BDATA_STRUCT:
+                    fmt, size = _BDATA_STRUCT[obj['dtype']]
+                    raw = base64.b64decode(obj['bdata'])
+                    return list(struct.unpack(f'{len(raw)//size}{fmt}', raw))
+                return {k: _decode_bdata(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_decode_bdata(x) for x in obj]
+            return obj
+        def _fig_to_json(fig):
+            """Serialize a Plotly figure to JSON with plain numeric arrays (Plotly.js 2.x/3.x compatible)."""
+            return json.dumps(_decode_bdata(fig.to_dict()))
+        try:
+            lat = data.get("latitude", 43.7696)
+            lon = data.get("longitude", 11.2558)
+            scenario = data.get("experiment", "historical")
+            variable = data.get("variable", "tasmin")
+            value = data.get("value", "Mean")
+            models = data.get("models", [])
+            figure, table = cp.get_figure_and_table(lat, lon, scenario, variable, value, models)
+            figure_json = _fig_to_json(figure)
+            await self.emit("climate_selection_result", figure_json, to=sid)
+            if table is not None:
+                table_data = {
+                    "columns": ["Model"] + table.columns.tolist(),
+                    "rows": [[str(idx)] + [round(float(val), 3) for val in row.values] for idx, row in table.iterrows()]
+                }
+                await self.emit("climate_table_result", table_data, to=sid)
+        except KeyError as e:
+            print(f"KeyError: {e}")
+            await self.emit("error", "No climate data available", to=sid)
+
+    async def on_process_climate_data(self, sid, data):
+        try:
+            lat = data.get("lat")
+            lon = data.get("lon")
+            experiment = data.get("experiment")
+            variable = data.get("variable")
+            output = data.get("value", "Mean")
+            models = data.get("models", [])
+
+            figure, table = cp.get_figure_and_table(lat, lon, experiment, variable, output, models)
+            if figure is None or table is None:
+                await self.emit("error", "No climate data available for the selected parameters.", to=sid)
+                return
+
+            self.data[sid]["climate_report"] = {
+                "figure": figure,
+                "table": table,
+                "experiment": experiment,
+                "variable": variable,
+                "output": output,
+            }
+            await self.emit("processed_climate_data", to=sid)
+        except Exception as e:
+            error_line = f"{e.__class__.__name__} on line {sys.exc_info()[-1].tb_lineno}: {e}"
+            print(error_line)
+            await self.emit("error", error_line, to=sid)
 
     # --- Demo Handlers ---
     async def on_data_driven_demo(self, sid):

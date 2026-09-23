@@ -29,11 +29,11 @@
                     </button>
                 </template>
 
-                <template v-if="mode === 'climateResilience' || mode === 'earthquakeResilience'">
+                <template v-if="mode === 'climate' || mode === 'earthquakeResilience'">
                     <button class="btn-pro btn-outline-pro" @click="openManual">
                         <i class="bi bi-file-earmark-pdf"></i> View Documentation
                     </button>
-                    <button class="btn-pro" @click="changePage('input')">
+                    <button class="btn-pro" @click="changePage(mode === 'climate' ? 'climate' : 'input')">
                         Initialize Project <i class="bi bi-arrow-right"></i>
                     </button>
                 </template>
@@ -62,6 +62,7 @@
 
 <script>
 import LogoLine from "./LogoLine.vue";
+import climatePaperUrl from "./climateResilience/climate_paper.pdf?url";
 
 // How long to keep the demo button's own spinner up after the last
 // demo-related socket event, independent of the app-wide activity indicator.
@@ -84,7 +85,7 @@ export default {
                 multiModel: "Multi-Building Design Updating",
                 mosaic: "MOSAIC Surrogate Modeling",
                 earthquakeResilience: "Assessment of Earthquake Resilience",
-                climateResilience: "Analyzing Climate Resilience",
+                climate: "Climate Resilience Analysis",
             },
             descriptions: {
                 surrogate: `
@@ -135,13 +136,22 @@ export default {
                         <li>Train a MOSAIC model with a configurable resolution and classification method</li>
                         <li>Link measurements and update the digital twin</li>
                     </ul>
+                `,
+                climate: `
+                    <h3>Climate Resilience Analysis</h3>
+                    <p>Assess the vulnerability of a building to climate hazards using CORDEX regional climate projections. Analyze exposure and sensitivity under historical and future emission scenarios.</p>
+                    <ul>
+                        <li>Locate the building and pick a climate scenario (RCP 4.5 / RCP 8.5)</li>
+                        <li>Select climate variables and indicators across multiple regional models</li>
+                        <li>Review the results and export a building report</li>
+                    </ul>
                 `
             }
         };
     },
     methods: {
         openManual() {
-            const file = this.mode === "earthquakeResilience" ? "./EPUSH_paper.pdf" : "./climate_paper.pdf";
+            const file = this.mode === "earthquakeResilience" ? "./EPUSH_paper.pdf" : climatePaperUrl;
             window.open(file, "_blank");
         },
         startDemoLoading() {

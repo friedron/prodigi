@@ -45,7 +45,7 @@
                     <button class="btn-pro mt-auto">Start Module</button>
                 </div>
             </div>
-            <div class="mode-card" @click="selectMode('climateResilience')">
+            <div class="mode-card" @click="selectMode('climate')">
                 <div class="card-content">
                     <h3>Climate Resilience Analysis</h3>
                     <p>Assess the vulnerability of buildings to climate hazards by analyzing exposure and sensitivity under different scenarios.</p>
