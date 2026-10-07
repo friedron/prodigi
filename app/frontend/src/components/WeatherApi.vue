@@ -75,9 +75,9 @@
                 </div>
                 <div class="modal-footer d-flex justify-content-end gap-2 pt-3 mt-4 border-top">
                     <button type="button" class="btn-pro btn-outline-pro" @click="closeModal">Cancel</button>
-                    <button type="button" class="btn-pro" @click="load" :disabled="loadingState.active">
-                        <span v-if="loadingState.active" class="btn-spinner"></span>
-                        {{ loadingState.active ? "Fetching…" : "Fetch Data" }}
+                    <button type="button" class="btn-pro" @click="load" :disabled="fetching">
+                        <span v-if="fetching" class="btn-spinner"></span>
+                        {{ fetching ? "Fetching…" : "Fetch Data" }}
                     </button>
                 </div>
             </div>
@@ -86,8 +86,6 @@
 </template>
 
 <script>
-import { loadingState } from "../loadingState";
-
 function formatDate(date) {
     return date.toISOString().slice(0, 10);
 }
@@ -97,9 +95,6 @@ function formatDate(date) {
 const maxDate = new Date();
 
 export default {
-    setup() {
-        return { loadingState };
-    },
     props: {
         socket: {
             type: Object,
@@ -110,6 +105,7 @@ export default {
     data() {
         return {
             showInputLoader: false,
+            fetching: false,
             selectedVariables: [],
             latitude: 52.52,
             longitude: 13.41,
@@ -223,10 +219,27 @@ export default {
                 end_date: this.endDate,
                 features: this.selectedVariables,
             };
+            // Stay open with a spinner until the server answers (weather_done / error).
+            this.fetching = true;
             this.socket.emit("fetch_weather_data", params);
+        },
+        onFetchDone() {
+            if (!this.fetching) return;
+            this.fetching = false;
             this.$emit("close");
             this.closeModal();
         },
+        onFetchError() {
+            this.fetching = false;
+        },
+    },
+    mounted() {
+        this.socket.on("weather_done", this.onFetchDone);
+        this.socket.on("error", this.onFetchError);
+    },
+    beforeUnmount() {
+        this.socket.off("weather_done", this.onFetchDone);
+        this.socket.off("error", this.onFetchError);
     },
 };
 </script>

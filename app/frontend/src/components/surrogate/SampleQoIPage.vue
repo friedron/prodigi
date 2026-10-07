@@ -11,48 +11,52 @@
 
         <BackButton :prevPage="'variables'" :changePage="changePage" />
 
-        <!-- MOSAIC Training Data Card -->
+        <!-- MOSAIC Parameters Card -->
         <div v-if="mode === 'mosaic'" class="card-pro content-card mb-4 mt-4">
-            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
-                <i class="bi bi-file-earmark-binary fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">MOSAIC Training Data</h2>
+            <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-file-earmark-spreadsheet fs-4 me-2 text-primary"></i>
+                    <h2 class="h4 mb-0">MOSAIC Parameters</h2>
+                </div>
+                <label for="mosaicParams" class="btn-pro btn-sm mb-0">
+                    <i class="bi bi-upload"></i> Load Parameters CSV
+                    <input type="file" id="mosaicParams" @change="loadSample" accept=".csv" class="d-none" />
+                </label>
             </div>
             <p class="text-muted small">
-                Upload the pre-computed FE analysis results as <code>.npy</code> files, matching the reference notebook workflow.
-                Define variables (previous page) in the same column order as <code>parameters.npy</code>.
+                Upload the pre-computed FE analysis parameters as a CSV, with columns matching the variables
+                defined on the previous page (same names/order).
             </p>
-
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label fw-bold d-block">Parameters</label>
-                    <label for="mosaicParams" class="btn-pro btn-sm btn-outline-pro mb-2">
-                        <i class="bi bi-upload"></i> Load parameters.npy
-                        <input type="file" id="mosaicParams" @change="loadMosaicParameters" accept=".npy" class="d-none" />
-                    </label>
-                    <div class="small text-muted">
-                        {{ variablePage.mosaic.parametersShape ? `Shape: (${variablePage.mosaic.parametersShape.join(", ")})` : "Not loaded" }}
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-bold d-block">Frequencies</label>
-                    <label for="mosaicFreqs" class="btn-pro btn-sm btn-outline-pro mb-2">
-                        <i class="bi bi-upload"></i> Load frequencies.npy
-                        <input type="file" id="mosaicFreqs" @change="loadMosaicFrequencies" accept=".npy" class="d-none" />
-                    </label>
-                    <div class="small text-muted">
-                        {{ variablePage.mosaic.frequenciesShape ? `Shape: (${variablePage.mosaic.frequenciesShape.join(", ")})` : "Not loaded" }}
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-bold d-block">Eigenvectors</label>
-                    <label for="mosaicEigvecs" class="btn-pro btn-sm btn-outline-pro mb-2">
-                        <i class="bi bi-upload"></i> Load eigenvectors.npy
-                        <input type="file" id="mosaicEigvecs" @change="loadMosaicEigenvectors" accept=".npy" class="d-none" />
-                    </label>
-                    <div class="small text-muted">
-                        {{ variablePage.mosaic.eigenvectorsShape ? `Shape: (${variablePage.mosaic.eigenvectorsShape.join(", ")})` : "Not loaded" }}
-                    </div>
-                </div>
+            <div v-if="Object.keys(variablePage.inputStats).length > 0" class="table-responsive">
+                <table class="table table-sm table-hover align-middle custom-table border">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th class="text-end">Mean</th>
+                            <th class="text-end">Std</th>
+                            <th class="text-end">Min</th>
+                            <th class="text-end">25%</th>
+                            <th class="text-end">50%</th>
+                            <th class="text-end">75%</th>
+                            <th class="text-end">Max</th>
+                            <th class="text-end">Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(row, key) in variablePage.inputStats" :key="key">
+                            <td class="fw-bold text-primary">{{ key }}</td>
+                            <td class="text-end font-monospace">{{ row.mean.toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ row.std ? row.std.toFixed(4) : '-' }}</td>
+                            <td class="text-end font-monospace">{{ row.min.toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ row["25%"].toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ row["50%"].toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ row["75%"].toFixed(4) }}</td>
+                            <td class="text-end font-monospace">{{ row.max.toFixed(4) }}</td>
+                            <td class="text-end font-monospace text-muted small">{{ row.count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mt-3">Summary statistics of parameter samples ({{ variablePage.samples.length }} rows loaded).</p>
             </div>
         </div>
 
@@ -96,10 +100,10 @@
             </div>
 
             <div class="mt-4 pt-3 border-top d-flex justify-content-center gap-3">
-                <button class="btn-pro px-5" @click="sample" :disabled="loadingState.active">
-                    <span v-if="loadingState.active" class="btn-spinner"></span>
+                <button class="btn-pro px-5" @click="sample" :disabled="isSampling">
+                    <span v-if="isSampling" class="btn-spinner"></span>
                     <i v-else class="bi bi-play-fill"></i>
-                    {{ loadingState.active ? "Sampling…" : "Run Sampling" }}
+                    {{ isSampling ? "Sampling…" : "Run Sampling" }}
                 </button>
                 <button v-if="variablePage.samples.length > 0" class="btn-pro btn-outline-pro" @click="saveSample">
                     <i class="bi bi-download"></i> Save Results
@@ -108,7 +112,7 @@
         </div>
 
         <!-- QoI Card -->
-        <div v-if="mode !== 'mosaic'" class="card-pro content-card mb-4">
+        <div class="card-pro content-card mb-4">
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-bar-chart-steps fs-4 me-2 text-primary"></i>
@@ -119,9 +123,14 @@
                     <input type="file" id="qoiInput" @change="loadQoi" accept=".csv" class="d-none" />
                 </label>
             </div>
+            <p v-if="mode === 'mosaic'" class="text-muted small">
+                Columns must be named <code>f.&lt;mode&gt;</code> for frequencies (e.g. <code>f.1</code>) and
+                <code>S.&lt;mode&gt;.&lt;node&gt;.x</code> for eigenvector components (e.g. <code>S.1.1.x</code>),
+                covering every mode/node combination.
+            </p>
 
             <div v-if="Object.keys(variablePage.qoiTable).length > 0" class="table-responsive">
-                <table class="table-custom table-hover align-middle custom-table border">
+                <table class="table table-sm table-hover align-middle custom-table border">
                     <thead>
                         <tr>
                             <th>Metric</th>
@@ -159,7 +168,7 @@
 
         <NextButton
             :nextPage="'exploratory'"
-            :available="mode === 'mosaic' ? mosaicDataReady : (variablePage.samples.length > 0 && Object.keys(variablePage.qoiTable).length > 0)"
+            :available="variablePage.samples.length > 0 && Object.keys(variablePage.qoiTable).length > 0"
             :changePage="changePage"
         />
     </div>
@@ -169,7 +178,6 @@
 import NextButton from "../NextButton.vue";
 import BackButton from "../BackButton.vue";
 import LogoLine from "../LogoLine.vue";
-import { loadingState } from "../../loadingState";
 
 export default {
     components: {
@@ -177,8 +185,17 @@ export default {
         BackButton,
         LogoLine,
     },
-    setup() {
-        return { loadingState };
+    data() {
+        return { isSampling: false };
+    },
+    mounted() {
+        // "sample" carries the result of a sampling run; "error" ends it too.
+        this.socket.on("sample", this.stopSampling);
+        this.socket.on("error", this.stopSampling);
+    },
+    beforeUnmount() {
+        this.socket.off("sample", this.stopSampling);
+        this.socket.off("error", this.stopSampling);
     },
     props: {
         socket: { type: Object, required: true },
@@ -188,21 +205,9 @@ export default {
         addPageDone: { type: Function, required: true },
         sendInChunks: { type: Function, required: true },
     },
-    computed: {
-        mosaicDataReady() {
-            const m = this.variablePage.mosaic;
-            return !!(m && m.parametersShape && m.frequenciesShape && m.eigenvectorsShape);
-        },
-    },
     watch: {
         variablePage: {
             handler(newVal) {
-                if (this.mode === "mosaic") {
-                    if (this.mosaicDataReady && newVal.data.variables.length > 0) {
-                        this.addPageDone("sample");
-                    }
-                    return;
-                }
                 if (
                     newVal.samples.length > 0 &&
                     Object.keys(newVal.qoiTable).length > 0 &&
@@ -216,14 +221,8 @@ export default {
         },
     },
     methods: {
-        loadMosaicParameters(event) {
-            this.sendInChunks(event.target.files[0], "load_mosaic_parameters", this.socket);
-        },
-        loadMosaicFrequencies(event) {
-            this.sendInChunks(event.target.files[0], "load_mosaic_frequencies", this.socket);
-        },
-        loadMosaicEigenvectors(event) {
-            this.sendInChunks(event.target.files[0], "load_mosaic_eigenvectors", this.socket);
+        stopSampling() {
+            this.isSampling = false;
         },
         loadSampleSettings(event) {
             const file = event.target.files[0];
@@ -250,6 +249,7 @@ export default {
         },
         sample() {
             if (this.variablePage.data.sampleMethod !== null && this.variablePage.data.numSamples !== null) {
+                this.isSampling = true;
                 this.socket.emit("sample", this.variablePage.data);
             } else {
                 alert("Please select a sampling method and enter the number of samples.");
@@ -308,15 +308,9 @@ export default {
 
 .custom-table thead th {
     background-color: var(--secondary);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
     color: var(--text-muted);
-    padding: var(--spacing-md);
-    white-space: nowrap;
-}
-
-.custom-table tbody td {
-    padding: var(--spacing-md);
 }
 
 .border-dashed {

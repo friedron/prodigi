@@ -14,20 +14,95 @@
         <!-- Mode Switcher -->
         <div class="mode-switcher d-flex justify-content-center mb-4 mt-4">
             <div class="btn-group p-1 bg-light rounded-pill border shadow-sm">
-                <button 
-                    class="btn rounded-pill px-4" 
+                <button
+                    class="btn rounded-pill px-4"
                     :class="uqPage.mode === 'global' ? 'btn-primary' : 'btn-light'"
                     @click="uqPage.mode = 'global'; uqPage.selectedQoI = null;"
                 >
                     <i class="bi bi-globe2 me-2"></i>Global Sensitivities
                 </button>
-                <button 
-                    class="btn rounded-pill px-4" 
+                <button
+                    class="btn rounded-pill px-4"
                     :class="uqPage.mode === 'local' ? 'btn-primary' : 'btn-light'"
                     @click="uqPage.mode = 'local'; uqPage.selectedQoI = null;"
                 >
                     <i class="bi bi-geo-alt me-2"></i>Local Sensitivities
                 </button>
+                <button
+                    v-if="mode === 'mosaic'"
+                    class="btn rounded-pill px-4"
+                    :class="uqPage.mode === 'variableSpace' ? 'btn-primary' : 'btn-light'"
+                    @click="uqPage.mode = 'variableSpace'; uqPage.selectedQoI = null;"
+                >
+                    <i class="bi bi-grid-3x3-gap me-2"></i>Variable Space Exploration
+                </button>
+            </div>
+        </div>
+
+        <!-- MOSAIC VARIABLE SPACE EXPLORATION MODE -->
+        <div v-if="uqPage.mode === 'variableSpace'" class="mode-container">
+            <div class="card-pro content-card mb-4">
+                <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
+                    <i class="bi bi-grid-3x3-gap fs-4 me-2 text-primary"></i>
+                    <h2 class="h4 mb-0">Variable Space Exploration</h2>
+                </div>
+
+                <div class="col-md-6 mb-4">
+                    <h5 class="fw-bold mb-3 small text-uppercase text-muted">Number of Subdomains per Mode</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm custom-table bg-white border shadow-sm">
+                            <thead>
+                                <tr>
+                                    <th>Mode</th>
+                                    <th class="text-end">Subdomains</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(count, idx) in surrogatePage.mosaicSubdomains" :key="idx">
+                                    <td class="fw-bold">{{ idx + 1 }}</td>
+                                    <td class="text-end font-monospace">{{ count }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="row g-3 align-items-end mb-4">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Mode</label>
+                        <select class="form-select" v-model.number="surrogatePage.mosaicMode">
+                            <option v-for="(count, idx) in surrogatePage.mosaicSubdomains" :key="idx" :value="idx + 1">
+                                {{ idx + 1 }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Samples</label>
+                        <input type="number" class="form-control" min="1" v-model.number="surrogatePage.mosaicNSamples" />
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn-pro" @click="generateMosaicPlots" :disabled="isGeneratingMosaicPlots">
+                            <span v-if="isGeneratingMosaicPlots" class="btn-spinner"></span>
+                            <i v-else class="bi bi-image"></i>
+                            {{ isGeneratingMosaicPlots ? "Generating…" : "Generate" }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-12" v-if="surrogatePage.mosaicPlots.spaceDivision">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">Space Division</h5>
+                        <img :src="surrogatePage.mosaicPlots.spaceDivision" class="img-fluid plot-img plot-wide" />
+                    </div>
+                    <div class="col-12" v-if="surrogatePage.mosaicPlots.referenceEigenvectors">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">Reference Eigenvectors</h5>
+                        <img :src="surrogatePage.mosaicPlots.referenceEigenvectors" class="img-fluid plot-img plot-wide" />
+                    </div>
+                    <div class="col-12" v-if="surrogatePage.mosaicPlots.referenceCorrelation">
+                        <h5 class="fw-bold mb-3 small text-uppercase text-muted">Reference Correlation Matrix</h5>
+                        <img :src="surrogatePage.mosaicPlots.referenceCorrelation" class="img-fluid plot-img plot-wide" />
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -176,7 +251,7 @@
                         <thead>
                             <tr>
                                 <th>QoI</th>
-                                <th v-for="param in surrogatePage.selectedFeats" :key="param" class="text-end param-col">{{ param }}</th>
+                                <th v-for="param in featNames" :key="param" class="text-end param-col">{{ param }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -246,7 +321,7 @@
                 <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                     <div class="d-flex align-items-center">
                         <i class="bi bi-pin-map fs-4 me-2 text-primary"></i>
-                        <h2 class="h4 mb-0">Point Prediction & Attribution</h2>
+                        <h2 class="h4 mb-0">{{ mode === 'mosaic' ? 'Point Prediction' : 'Point Prediction & Attribution' }}</h2>
                     </div>
                     <div class="d-flex gap-2">
                         <button class="btn-pro" @click="computeSingle" :disabled="isLoading">
@@ -263,13 +338,35 @@
                 <p class="text-muted">Enter specific parameter values to predict system response and analyze local feature contributions.</p>
                 
                 <div class="row g-3 mb-4 p-3 bg-light rounded border">
-                    <div v-for="(param, index) in surrogatePage.selectedFeats" :key="param" class="col-md-4 col-lg-3">
+                    <div v-for="(param, index) in featNames" :key="param" class="col-md-4 col-lg-3">
                         <label class="form-label small fw-bold text-muted mb-1">{{ param }}</label>
                         <input type="number" class="form-control" v-model="uqPage.paramValues[index]" />
                     </div>
                 </div>
 
-                <div v-if="uqPage.shapPlotMulti" class="plot-container mb-4">
+                <div v-if="mode === 'mosaic' && uqPage.prediction.length > 0" class="border-top pt-4">
+                    <h3 class="h5 mb-3">Predicted QoI</h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle custom-table border">
+                            <thead>
+                                <tr>
+                                    <th>QoI</th>
+                                    <th class="text-end">Predicted Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(name, index) in surrogatePage.outputQoI" :key="name">
+                                    <td class="fw-bold text-primary">{{ name }}</td>
+                                    <td class="text-end font-monospace">
+                                        {{ uqPage.prediction[index] !== undefined ? uqPage.prediction[index].toFixed(4) : "-" }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div v-if="mode !== 'mosaic' && uqPage.shapPlotMulti" class="plot-container mb-4">
                     <img :src="uqPage.shapPlotMulti" class="img-fluid plot-img" />
                 </div>
 
@@ -318,7 +415,7 @@
         </div>
 
         <NextButton
-            :nextPage="mode === 'surrogate' ? 'measurements' : 'subtract'"
+            :nextPage="mode === 'surrogate' || mode === 'mosaic' ? 'measurements' : 'subtract'"
             :available="true"
             :changePage="changePage"
         />
@@ -350,7 +447,17 @@ export default {
         // for slow compute with no in-between socket chatter.
         isLoading: { type: Boolean, default: false },
     },
+    data() {
+        return {
+            isGeneratingMosaicPlots: false,
+        };
+    },
     computed: {
+        featNames() {
+            const selected = this.surrogatePage.selectedFeats;
+            if (selected.length > 0 || this.mode !== "mosaic") return selected;
+            return this.variablePage.data.variables.map((v) => v.name);
+        },
         hasSobolData() {
             return this.uqPage.sensitivities.partialVariance && 
                    Object.keys(this.uqPage.sensitivities.partialVariance).length > 0;
@@ -477,12 +584,12 @@ export default {
         computeSingle() {
             if (this.validateParmValues()) {
                 this.computePred();
-                this.computeWaterFallMulti();
+                if (this.mode !== "mosaic") this.computeWaterFallMulti();
             }
         },
         validateParmValues() {
             if (
-                this.uqPage.paramValues.length !== this.surrogatePage.selectedFeats.length ||
+                this.uqPage.paramValues.length !== this.featNames.length ||
                 this.uqPage.paramValues.includes(undefined) ||
                 this.uqPage.paramValues.includes("")
             ) {
@@ -494,11 +601,45 @@ export default {
         setLoading(value) {
             this.$emit("set-loading", value);
         },
-    }
+        generateMosaicPlots() {
+            if (!this.surrogatePage.mosaicMode) return;
+            this.isGeneratingMosaicPlots = true;
+            this._mosaicPlotsPending = 3;
+            this.socket.emit("mosaic_variable_space_exploration", {
+                mode: this.surrogatePage.mosaicMode,
+                nSamples: this.surrogatePage.mosaicNSamples,
+            });
+        },
+    },
+    mounted() {
+        this._mosaicPlotsPending = 0;
+        this._mosaicPlotHandler = () => {
+            this._mosaicPlotsPending = Math.max(0, this._mosaicPlotsPending - 1);
+            if (this._mosaicPlotsPending === 0) this.isGeneratingMosaicPlots = false;
+        };
+        this.socket.on("mosaic_space_division_plot", this._mosaicPlotHandler);
+        this.socket.on("mosaic_reference_eigenvectors_plot", this._mosaicPlotHandler);
+        this.socket.on("mosaic_reference_correlation_plot", this._mosaicPlotHandler);
+        this._mosaicPlotErrorHandler = () => {
+            this.isGeneratingMosaicPlots = false;
+        };
+        this.socket.on("error", this._mosaicPlotErrorHandler);
+    },
+    beforeUnmount() {
+        this.socket.off("mosaic_space_division_plot", this._mosaicPlotHandler);
+        this.socket.off("mosaic_reference_eigenvectors_plot", this._mosaicPlotHandler);
+        this.socket.off("mosaic_reference_correlation_plot", this._mosaicPlotHandler);
+        this.socket.off("error", this._mosaicPlotErrorHandler);
+    },
 };
 </script>
 
 <style scoped>
+.plot-wide {
+    width: 100%;
+    max-height: none;
+}
+
 .uq-page {
     max-width: 1000px;
     margin: 0 auto;

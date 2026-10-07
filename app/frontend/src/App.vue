@@ -1,5 +1,6 @@
 <script setup>
 import LogoBar from "./components/LogoBar.vue";
+import ImageLightbox from "./components/ImageLightbox.vue";
 import MeasurementsPage from "./components/surrogate/MeasurementsPage.vue";
 import SubtractEffects from "./components/subtracting/SubtractEffects.vue";
 import ParamPage from "./components/surrogate/ParamPage.vue";
@@ -203,6 +204,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             <p>Version: Beta 1.4</p>
             <p>Last Updated: 2026-02-20</p>
         </div>
+        <ImageLightbox />
         <Teleport to="body">
             <ConfirmDialog
                 v-if="showConfirm"
@@ -244,6 +246,7 @@ export default {
         ThresholdExceedance,
         CompareMeasurement,
         Exploratory,
+        ImageLightbox,
         PredictedVsFeaturePage,
     },
     methods: {
@@ -269,11 +272,6 @@ export default {
                     inputStats: {},
                     qoiTable: {},
                     samples: [],
-                    mosaic: {
-                        parametersShape: null,
-                        frequenciesShape: null,
-                        eigenvectorsShape: null,
-                    },
                 },
                 surrogatePage: {
                     selectedLayer: null,
@@ -385,6 +383,7 @@ export default {
                     selectedQoIForMetric: null,
                     mosaicSubdomains: [],
                     mosaicMode: 1,
+                    mosaicNSamples: 1000,
                     mosaicPlots: {
                         spaceDivision: null,
                         referenceEigenvectors: null,
@@ -624,15 +623,6 @@ export default {
         socket.on("features_stats", (data) => {
             const parsed = JSON.parse(data);
             this.variablePage.inputStats = parsed;
-        });
-        socket.on("mosaic_parameters_loaded", (data) => {
-            this.variablePage.mosaic.parametersShape = data.shape;
-        });
-        socket.on("mosaic_frequencies_loaded", (data) => {
-            this.variablePage.mosaic.frequenciesShape = data.shape;
-        });
-        socket.on("mosaic_eigenvectors_loaded", (data) => {
-            this.variablePage.mosaic.eigenvectorsShape = data.shape;
         });
         socket.on("train_result", (data) => {
             this.surrogatePage.trainResult = data;

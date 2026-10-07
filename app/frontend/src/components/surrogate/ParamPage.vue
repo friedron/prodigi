@@ -25,7 +25,7 @@
                 </div>
             </div>
 
-            <div class="table-custom-responsive">
+            <div class="table-responsive">
                 <table class="table-custom table-hover align-middle custom-table">
                     <thead>
                         <tr>

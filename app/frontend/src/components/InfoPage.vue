@@ -54,6 +54,11 @@
                         <i v-else class="bi bi-play-circle"></i>
                         {{ demoLoading ? "Loading…" : "Run Demo" }}
                     </button>
+                    <button v-if="mode === 'mosaic'" class="btn-pro btn-secondary" @click="mosaicDemo" :disabled="demoLoading">
+                        <span v-if="demoLoading" class="btn-spinner"></span>
+                        <i v-else class="bi bi-play-circle"></i>
+                        {{ demoLoading ? "Loading…" : "Run Demo" }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -63,10 +68,6 @@
 <script>
 import LogoLine from "./LogoLine.vue";
 import climatePaperUrl from "./climateResilience/climate_paper.pdf?url";
-
-// How long to keep the demo button's own spinner up after the last
-// demo-related socket event, independent of the app-wide activity indicator.
-const DEMO_DEBOUNCE_MS = 1500;
 
 export default {
     components: { LogoLine },
@@ -154,19 +155,10 @@ export default {
             const file = this.mode === "earthquakeResilience" ? "./EPUSH_paper.pdf" : climatePaperUrl;
             window.open(file, "_blank");
         },
+        // The server emits "demo_done" (or "error") when a demo finishes. Don't
+        // time out on socket silence: demos can do long server-side work.
         startDemoLoading() {
             this.demoLoading = true;
-            clearTimeout(this._demoHideTimer);
-            this._demoHideTimer = setTimeout(() => {
-                this.demoLoading = false;
-            }, DEMO_DEBOUNCE_MS);
-        },
-        onDemoSocketActivity() {
-            if (!this.demoLoading) return;
-            clearTimeout(this._demoHideTimer);
-            this._demoHideTimer = setTimeout(() => {
-                this.demoLoading = false;
-            }, DEMO_DEBOUNCE_MS);
         },
         async subtractingDemo() {
             this.startDemoLoading();
@@ -180,16 +172,19 @@ export default {
             this.startDemoLoading();
             await this.socket.emit("multi_model_demo");
         },
+        async mosaicDemo() {
+            this.startDemoLoading();
+            await this.socket.emit("mosaic_demo");
+        },
     },
     mounted() {
         this.stopDemoLoadingOnError = () => { this.demoLoading = false; };
-        this.socket.onAny(this.onDemoSocketActivity);
         this.socket.on("error", this.stopDemoLoadingOnError);
+        this.socket.on("demo_done", this.stopDemoLoadingOnError);
     },
     beforeUnmount() {
-        clearTimeout(this._demoHideTimer);
-        this.socket.offAny(this.onDemoSocketActivity);
         this.socket.off("error", this.stopDemoLoadingOnError);
+        this.socket.off("demo_done", this.stopDemoLoadingOnError);
     }
 };
 </script>

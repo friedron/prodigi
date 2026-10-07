@@ -103,7 +103,7 @@
                     Select a model file above before adding it to the list.
                 </div>
 
-                <div v-if="modelCount > 0">
+                <div v-if="modelCount > 0" class="table-responsive">
                     <table class="table-pro">
                         <thead>
                             <tr>
@@ -218,10 +218,10 @@
                     v-if="!uploadPage.jointCreated"
                     class="btn-pro btn-lg px-5 mt-4"
                     @click="createJoint"
-                    :disabled="modelCount < 2 || loadingState.active"
+                    :disabled="modelCount < 2 || creatingJoint"
                 >
-                    <span v-if="loadingState.active" class="btn-spinner me-2"></span>
-                    {{ loadingState.active ? "Creating…" : "Create Joint Manager" }}
+                    <span v-if="creatingJoint" class="btn-spinner me-2"></span>
+                    {{ creatingJoint ? "Creating…" : "Create Joint Manager" }}
                 </button>
 
                 <div v-if="uploadPage.jointCreated" class="joint-success mt-3">
@@ -245,13 +245,9 @@ import NextButton from "./NextButton.vue";
 import BackButton from "./BackButton.vue";
 import LogoLine from "./LogoLine.vue";
 import InputLoader from "./InputLoader.vue";
-import { loadingState } from "../loadingState";
 
 export default {
     components: { NextButton, BackButton, LogoLine, InputLoader },
-    setup() {
-        return { loadingState };
-    },
     props: {
         uploadPage: { type: Object, required: true },
         socket: { type: Object, required: true },
@@ -268,6 +264,7 @@ export default {
             selectedModel: null,
             connect: [{ model: "", param: "" }],
             connections: [],
+            creatingJoint: false,
         };
     },
     computed: {
@@ -356,8 +353,20 @@ export default {
                 acc[key] = params;
                 return acc;
             }, {});
+            this.creatingJoint = true;
             this.socket.emit("create_joint", results);
-        }
+        },
+        stopCreatingJoint() {
+            this.creatingJoint = false;
+        },
+    },
+    mounted() {
+        this.socket.on("joint_created", this.stopCreatingJoint);
+        this.socket.on("error", this.stopCreatingJoint);
+    },
+    beforeUnmount() {
+        this.socket.off("joint_created", this.stopCreatingJoint);
+        this.socket.off("error", this.stopCreatingJoint);
     },
     watch: {
         "uploadPage.jointCreated"(val) { if (val) this.addPageDone("upload"); },

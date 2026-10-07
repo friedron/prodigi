@@ -156,7 +156,7 @@
                 </div>
             </div>
 
-            <img v-if="img" :src="img" alt="Climate Data Visualization" class="img-fluid rounded border mb-3" />
+            <img v-if="img" :src="img" alt="Climate Data Visualization" class="img-fluid rounded border mb-3 zoomable" />
 
             <div class="plot-container mb-3" v-if="plotly_data">
                 <div id="climate-chart"></div>
@@ -233,7 +233,7 @@ export default {
     },
     methods: {
         setLoading(value) {
-            this.$emit("set-loading", true);
+            this.$emit("set-loading", value);
         },
         loadFile(event) {
             const file = event.target.files[0];
