@@ -12,74 +12,42 @@
         <BackButton :prevPage="'variables'" :changePage="changePage" />
 
         <!-- Data Configuration Section -->
-        <div v-if="mode !== 'mosaic'" class="card-pro content-card mb-4 mt-4">
+        <div class="card-pro content-card mb-4 mt-4">
             <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
                 <i class="bi bi-gear-wide-connected fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">Training & Testing Configuration</h2>
+                <h2 class="h4 mb-0">{{ mode === 'mosaic' ? 'Training Data' : 'Training & Testing Configuration' }}</h2>
             </div>
 
             <div class="row g-4 mb-4">
-                <div class="col-md-6">
+                <div :class="mode === 'mosaic' ? 'col-12' : 'col-md-6'">
                     <div class="stats-box d-flex gap-4">
                         <div class="stat-item">
-                            <label class="text-muted small text-uppercase fw-bold d-block">Inputs (Features)</label>
+                            <label class="text-muted small text-uppercase fw-bold d-block">{{ mode === 'mosaic' ? 'Parameters' : 'Inputs (Features)' }}</label>
                             <span class="h4 mb-0">{{ variablePage.data.variables.length }}</span>
                         </div>
                         <div class="stat-item border-start ps-4">
-                            <label class="text-muted small text-uppercase fw-bold d-block">Outputs (QoI)</label>
+                            <label class="text-muted small text-uppercase fw-bold d-block">{{ mode === 'mosaic' ? 'QoI Columns' : 'Outputs (QoI)' }}</label>
                             <span class="h4 mb-0">{{ Object.keys(variablePage.qoiTable).length || 0 }}</span>
                         </div>
+                        <template v-if="mode === 'mosaic'">
+                            <div class="stat-item border-start ps-4">
+                                <label class="text-muted small text-uppercase fw-bold d-block">Samples</label>
+                                <span class="h4 mb-0">{{ variablePage.samples.length }}</span>
+                            </div>
+                            <div class="stat-item border-start ps-4">
+                                <label class="text-muted small text-uppercase fw-bold d-block">Modes</label>
+                                <span class="h4 mb-0">{{ variablePage.nModes }}</span>
+                            </div>
+                            <div class="stat-item border-start ps-4">
+                                <label class="text-muted small text-uppercase fw-bold d-block">Nodes</label>
+                                <span class="h4 mb-0">{{ variablePage.nNodes }}</span>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
 
             <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label fw-bold d-flex align-items-center gap-1">
-                        Train-Test Ratio
-                        <Tooltip :content="'<p><b>Train-Test Ratio:</b> The proportion of the dataset used for training versus testing. 0.8 means 80% of the dataset is used for training and 20% for testing.</p>'" />
-                    </label>
-                    <input type="number" class="form-control" v-model="surrogatePage.splitConfig.trainTestRatio" step="0.1" min="0.1" max="0.9" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-bold d-flex align-items-center gap-1">
-                        Split Method
-                        <Tooltip :content="'<p><b>Shuffle:</b> Randomly shuffled before splitting.<br><b>Don\'t Shuffle:</b> Split in original order.<br><b>Reverse:</b> Split in reverse order.</p>'" />
-                    </label>
-                    <select class="form-select" v-model="surrogatePage.splitConfig.trainTestSplit">
-                        <option value="shuffle">Shuffle</option>
-                        <option value="no_shuffle">Don't shuffle</option>
-                        <option value="reverse">Reverse</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-bold">Random Seed</label>
-                    <input type="number" class="form-control" v-model="surrogatePage.splitConfig.seed" placeholder="None" />
-                </div>
-            </div>
-        </div>
-
-        <div v-else class="card-pro content-card mb-4 mt-4">
-            <div class="d-flex align-items-center mb-4 pb-2 border-bottom">
-                <i class="bi bi-gear-wide-connected fs-4 me-2 text-primary"></i>
-                <h2 class="h4 mb-0">Training Data</h2>
-            </div>
-            <div class="stats-box d-flex gap-4">
-                <div class="stat-item">
-                    <label class="text-muted small text-uppercase fw-bold d-block">Parameters</label>
-                    <span class="h4 mb-0">{{ variablePage.data.variables.length }}</span>
-                </div>
-                <div class="stat-item border-start ps-4">
-                    <label class="text-muted small text-uppercase fw-bold d-block">QoI Columns</label>
-                    <span class="h4 mb-0">{{ Object.keys(variablePage.qoiTable).length || 0 }}</span>
-                </div>
-                <div class="stat-item border-start ps-4">
-                    <label class="text-muted small text-uppercase fw-bold d-block">Samples</label>
-                    <span class="h4 mb-0">{{ variablePage.samples.length }}</span>
-                </div>
-            </div>
-
-            <div class="row g-3 mt-1">
                 <div class="col-md-4">
                     <label class="form-label fw-bold d-flex align-items-center gap-1">
                         Train-Test Ratio
@@ -212,19 +180,9 @@
                         <input type="number" class="form-control" step="1" v-model="surrogatePage.modelConfig.mosaicConfig.maxDoaEigenvectors" />
                     </div>
 
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold d-flex align-items-center gap-1">
-                            Classification Method
-                            <Tooltip :content="'<p>Algorithm used to classify samples during MOSAIC training.</p>'" />
-                        </label>
-                        <select class="form-select" v-model="surrogatePage.modelConfig.mosaicConfig.classificationMethod">
-                            <option value="SVC">SVC</option>
-                        </select>
-                    </div>
-
-                    <div class="col-12" v-if="surrogatePage.modelConfig.mosaicConfig.classificationMethod === 'SVC'">
+                    <div class="col-12">
                         <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
-                            <h5 class="mb-0 fs-6 fw-bold">Classifier Settings</h5>
+                            <h5 class="mb-0 fs-6 fw-bold">SVC Classifier Settings</h5>
                             <div class="btn-group btn-group-sm">
                                 <button
                                     type="button"
@@ -285,8 +243,8 @@
                     <div v-if="surrogatePage.modelConfig.modelType === 'CRPS'" class="row g-3 mb-4">
                         <div class="col-md-4">
                             <label class="form-label fw-bold d-flex align-items-center gap-1">
-                                Number of Independent Random Samplers
-                                <Tooltip :content="'<p>Number of independent noise samples drawn per input when training against the CRPS/energy score.</p>'" />
+                                Noise Dimensions
+                                <Tooltip :content="'<p>Dimension of the random noise input injected into the network. The model is trained against the CRPS/energy score, and each prediction draws samples by resampling this noise.</p>'" />
                             </label>
                             <input type="number" class="form-control" v-model="surrogatePage.modelConfig.crpsConfig.trainConfig.numSamplers" />
                         </div>
@@ -508,10 +466,20 @@
                         </table>
                     </div>
                 </div>
+
+                <div v-if="mode === 'mosaic' && surrogatePage.mosaicModalValidation" class="col-12">
+                    <h5 class="fw-bold mb-3 small text-uppercase text-muted d-flex align-items-center gap-1">
+                        Modal Validation
+                        <Tooltip :content="'<p>Per-mode distribution of the relative frequency error and the MAC error on the test split. Boxes span the 25–75th percentiles, whiskers the 5–95th.</p>'" />
+                    </h5>
+                    <div class="border rounded bg-white p-2 text-center">
+                        <img :src="surrogatePage.mosaicModalValidation" class="img-fluid" alt="Modal validation errors" />
+                    </div>
+                </div>
             </div>
         </div>
 
-        <NextButton v-if="mode !== 'inverse'" :nextPage="'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
+        <NextButton v-if="mode !== 'inverse'" :nextPage="skipUq ? 'subtract' : 'uq'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
         <NextButton v-if="mode === 'inverse'" :nextPage="'plot'" :available="surrogatePage.trainResult === 'Done'" :changePage="changePage" />
         
         <EditLayerModal
@@ -549,6 +517,7 @@ export default {
         socket: { type: Object, required: true },
         changePage: { type: Function, required: true },
         addPageDone: { type: Function, required: true },
+        skipUq: { type: Boolean, default: false },
     },
     data() {
         return {
@@ -644,6 +613,8 @@ export default {
             }
             const { splitConfig, modelConfig } = this.surrogatePage;
             this.isTraining = true;
+            this.surrogatePage.mosaicModalValidation = null;
+            this.surrogatePage.trainingModelType = modelConfig.modelType;
             console.log("Training with config:", { splitConfig, modelConfig, selectedFeats: this.selectedFeats, selectedLabels: this.selectedLabels });
             this.socket.emit("train", {
                 splitConfig,
@@ -670,7 +641,7 @@ export default {
     },
     computed: {
         computeNumOfLeaves() {
-            return computeNumOfLeaves(this.surrogatePage, this.variablePage);
+            return computeNumOfLeaves(this.surrogatePage);
         },
     },
 };

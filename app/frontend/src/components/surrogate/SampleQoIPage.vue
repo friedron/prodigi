@@ -16,22 +16,22 @@
             <div class="d-flex align-items-center justify-content-between mb-4 pb-2 border-bottom">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-file-earmark-spreadsheet fs-4 me-2 text-primary"></i>
-                    <h2 class="h4 mb-0">MOSAIC Parameters</h2>
+                    <h2 class="h4 mb-0">MOSAIC Variables</h2>
                 </div>
                 <label for="mosaicParams" class="btn-pro btn-sm mb-0">
-                    <i class="bi bi-upload"></i> Load Parameters CSV
+                    <i class="bi bi-upload"></i> Load Variables CSV
                     <input type="file" id="mosaicParams" @change="loadSample" accept=".csv" class="d-none" />
                 </label>
             </div>
             <p class="text-muted small">
-                Upload the pre-computed FE analysis parameters as a CSV, with columns matching the variables
+                Upload the pre-computed FE analysis variables as a CSV, with columns matching the variables
                 defined on the previous page (same names/order).
             </p>
             <div v-if="Object.keys(variablePage.inputStats).length > 0" class="table-responsive">
                 <table class="table table-sm table-hover align-middle custom-table border">
                     <thead>
                         <tr>
-                            <th>Parameter</th>
+                            <th>Variable</th>
                             <th class="text-end">Mean</th>
                             <th class="text-end">Std</th>
                             <th class="text-end">Min</th>

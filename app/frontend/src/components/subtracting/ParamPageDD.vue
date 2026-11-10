@@ -43,6 +43,13 @@
                         <div v-if="features_file" class="small text-success d-flex align-items-center">
                             <i class="bi bi-check-circle-fill me-1"></i> Loaded: {{ features_file }}
                         </div>
+                        <button
+                            v-if="isWeatherData"
+                            class="btn-pro btn-outline-pro btn-sm mt-2"
+                            @click="downloadWeatherCsv"
+                        >
+                            <i class="bi bi-download"></i> Download Weather Data (.csv)
+                        </button>
                     </div>
                 </div>
                 <div class="col-md-6">
@@ -237,6 +244,9 @@ export default {
         isInverse() {
             return this.mode === "inverse";
         },
+        isWeatherData() {
+            return this.features_file === "Weather Data";
+        },
         filteredQoi() {
             return Object.entries(this.variablePage.qoiTable).filter(([key]) => key !== "Datetime" && key !== "mode id");
         },
@@ -257,6 +267,18 @@ export default {
                 this.sendInChunks(file, "qoi_csv", this.socket);
                 return;
             }
+        },
+        downloadWeatherCsv() {
+            this.socket.emit("download_weather_csv");
+        },
+        saveWeatherCsv({ filename, csv }) {
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = filename || "weather_data.csv";
+            link.click();
+            URL.revokeObjectURL(url);
         },
         saveVariables() {
             try {
@@ -281,10 +303,12 @@ export default {
         this.socket.on("labels_loaded", (data) => {
             this.labels_file = data.filename;
         });
+        this.socket.on("weather_csv", this.saveWeatherCsv);
     },
     beforeUnmount() {
         this.socket.off("features_loaded");
         this.socket.off("labels_loaded");
+        this.socket.off("weather_csv", this.saveWeatherCsv);
     },
 };
 </script>

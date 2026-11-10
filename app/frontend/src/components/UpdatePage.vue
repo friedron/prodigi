@@ -41,6 +41,32 @@
                     </button>
                 </div>
             </div>
+
+            <div v-if="updatePage.mcmcProgress" class="mt-4">
+                <div class="d-flex justify-content-between small text-muted mb-1">
+                    <span v-if="updatePage.mcmcProgress.phase === 'starting'">Starting MCMC…</span>
+                    <span v-else>
+                        {{ updatePage.mcmcProgress.phase === 'burn-in' ? 'Burn-in' : 'Sampling' }}:
+                        step {{ updatePage.mcmcProgress.step }} / {{ updatePage.mcmcProgress.total }}
+                    </span>
+                    <span v-if="updatePage.mcmcProgress.fraction >= 1">Computing posterior statistics…</span>
+                    <span v-else>{{ Math.round(updatePage.mcmcProgress.fraction * 100) }}%</span>
+                </div>
+                <div
+                    class="progress"
+                    role="progressbar"
+                    aria-label="MCMC progress"
+                    :aria-valuenow="Math.round(updatePage.mcmcProgress.fraction * 100)"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                >
+                    <div
+                        class="progress-bar mcmc-progress-bar"
+                        :class="{ 'progress-bar-striped progress-bar-animated': updatePage.mcmcProgress.fraction >= 1 }"
+                        :style="{ width: (updatePage.mcmcProgress.fraction * 100) + '%' }"
+                    ></div>
+                </div>
+            </div>
         </div>
 
         <!-- Multi-Model Selection Card -->
@@ -81,6 +107,28 @@
 
             <div v-if="updatePage.mcmcPlot" class="plot-container mb-5">
                 <img :src="updatePage.mcmcPlot" class="img-fluid plot-img" alt="MCMC Plot" />
+            </div>
+
+            <div v-if="updatePage.mcmcAnimation || updatePage.mcmcAnimationPending || updatePage.mcmcAnimationError" class="mb-5">
+                <h5 class="small text-uppercase fw-bold text-muted mb-3">MCMC Random Walk</h5>
+                <div v-if="updatePage.mcmcAnimation" class="plot-container">
+                    <video
+                        :src="updatePage.mcmcAnimation"
+                        class="plot-img mcmc-video"
+                        controls autoplay loop muted playsinline
+                    ></video>
+                </div>
+                <div v-else-if="updatePage.mcmcAnimationPending" class="d-flex align-items-center gap-2 text-muted">
+                    <span class="btn-spinner"></span> Rendering animation…
+                </div>
+                <div v-else class="alert alert-warning mb-0">
+                    The animation could not be rendered: {{ updatePage.mcmcAnimationError }}
+                </div>
+                <div v-if="updatePage.mcmcAnimation" class="mt-2 text-end">
+                    <a :href="updatePage.mcmcAnimation" download="mcmc_walk.mp4" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-download me-1"></i> Download MP4
+                    </a>
+                </div>
             </div>
 
             <div v-if="updatePage.map" class="row g-4">
@@ -212,6 +260,7 @@ export default {
     methods: {
         update() {
             this.$emit("set-loading", true);
+            this.updatePage.mcmcProgress = { phase: "starting", fraction: 0 };
             if (this.mode === "multiModel") {
                 this.socket.emit("update_multi", this.updatePage.data);
             } else {
@@ -244,6 +293,7 @@ export default {
             document.body.removeChild(a);
         });
         this.socket.on("update_done", () => {
+            this.updatePage.mcmcProgress = null;
             this.$emit("set-loading", false);
             this.updateDone = true;
         });
@@ -258,15 +308,18 @@ export default {
             a.click();
             document.body.removeChild(a);
         });
-        this.socket.on("error", () => {
+        this._errorHandler = () => {
+            this.updatePage.mcmcProgress = null;
             this.savingSamples = false;
             this.savingStatistics = false;
-        });
+        };
+        this.socket.on("error", this._errorHandler);
     },
     beforeUnmount() {
         this.socket.off("posterior_samples");
         this.socket.off("update_done");
         this.socket.off("posterior_statistics");
+        this.socket.off("error", this._errorHandler);
     }
 };
 </script>
@@ -295,6 +348,15 @@ export default {
 .plot-img {
     max-height: 600px;
     object-fit: contain;
+}
+
+.mcmc-video {
+    max-width: 100%;
+}
+
+.mcmc-progress-bar {
+    background-color: var(--primary);
+    transition: width 0.2s ease;
 }
 
 .custom-table thead th {

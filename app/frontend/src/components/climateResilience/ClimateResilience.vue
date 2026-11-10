@@ -119,10 +119,16 @@
             </div>
 
             <div class="mt-4">
-                <label class="form-label small fw-bold text-uppercase text-muted">
-                    Models
-                    <Tooltip content="The models are provided with daily temporal resolution" />
-                </label>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label small fw-bold text-uppercase text-muted mb-0">
+                        Models
+                        <Tooltip content="The models are provided with daily temporal resolution" />
+                    </label>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" @click="setAllModels(true)">All</button>
+                        <button type="button" class="btn btn-outline-secondary py-0 px-2" @click="setAllModels(false)">None</button>
+                    </div>
+                </div>
                 <div class="row g-2 p-3 bg-light rounded border">
                     <div v-for="(model, index) in models" :key="`model-${index}`" class="col-6 col-sm-4 col-lg-3">
                         <div class="form-check">
@@ -162,6 +168,11 @@
                 <div id="climate-chart"></div>
             </div>
 
+            <div class="d-flex justify-content-end mb-2" v-if="tableData">
+                <button class="btn-pro btn-outline-pro" @click="downloadTableCsv">
+                    <i class="bi bi-filetype-csv"></i> Download CSV
+                </button>
+            </div>
             <div class="table-responsive mb-3" v-if="tableData">
                 <table class="table table-sm table-hover align-middle custom-table border">
                     <thead>
@@ -232,6 +243,9 @@ export default {
         };
     },
     methods: {
+        setAllModels(selected) {
+            this.climateResiliencePage.models = selected ? [...this.models] : [];
+        },
         setLoading(value) {
             this.$emit("set-loading", value);
         },
@@ -274,6 +288,32 @@ export default {
                 value: this.climateResiliencePage.output,
                 models: this.climateResiliencePage.models,
             });
+        },
+        downloadTableCsv() {
+            if (!this.tableData) return;
+            const escape = (value) => {
+                const s = value === null || value === undefined ? "" : String(value);
+                return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const lines = [
+                this.tableData.columns.map(escape).join(","),
+                ...this.tableData.rows.map((row) => row.map(escape).join(",")),
+            ];
+            // BOM so Excel reads UTF-8 (e.g. unit symbols) correctly
+            const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+            const { variable, experiment, city } = this.climateResiliencePage;
+            const name = ["climate", city, variable, experiment]
+                .filter(Boolean)
+                .join("_")
+                .replace(/[^\w.-]+/g, "_");
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${name}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         },
         openPdfInfo() {
             this.showReportInfo = true;

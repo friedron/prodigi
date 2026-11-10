@@ -11,7 +11,7 @@
                         {{ modeObj.name }}
                     </button>
                     <ul v-if="mode === modeKey" class="nav flex-column sub-menu">
-                        <li v-for="item in modeObj.items" :key="item.page">
+                        <li v-for="item in visibleItems(modeObj)" :key="item.page">
                             <button
                                 class="nav-link sub-item"
                                 :class="{ done: isPageDone(item.page), active: activePage === item.page }"
@@ -114,6 +114,11 @@ export default {
             type: Array,
             required: true,
         },
+        // Pages of the current mode to leave out of the menu (e.g. "uq" for probabilistic models).
+        hiddenPages: {
+            type: Array,
+            default: () => [],
+        },
     },
     computed: {
         menuStructure() {
@@ -121,6 +126,9 @@ export default {
         },
     },
     methods: {
+        visibleItems(modeObj) {
+            return modeObj.items.filter((item) => !this.hiddenPages.includes(item.page));
+        },
         isPageDone(page) {
             return this.completedPages.includes(page);
         },

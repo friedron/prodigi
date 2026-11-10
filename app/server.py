@@ -1,4 +1,3 @@
-import uuid
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive, thread-safe backend; must be set before pyplot is imported anywhere (plots now render off the main thread via asyncio.to_thread)
 import socketio
@@ -58,18 +57,11 @@ class MainHandler(tornado.web.RequestHandler):
             "script-src 'self' https://cdnjs.cloudflare.com; "
             "style-src 'self' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
+            "media-src 'self' blob:; "
             "connect-src 'self';",
         )
 
     def get(self):
-        session_id = self.get_secure_cookie("session_id")
-        if session_id:
-            session_id = session_id.decode()
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            self.set_secure_cookie(
-                "session_id", session_id, httponly=True, secure=True, samesite="Lax"
-            )
         try:
             self.render("index.html")
         except FileNotFoundError:

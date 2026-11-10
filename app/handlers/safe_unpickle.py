@@ -42,7 +42,6 @@ ALLOWED_MODULE_PREFIXES = (
     "SALib",
     "collections",
     "torchnaut",
-    "utils.probabilistic_models",
 )
 
 # Exact (module, name) targets that are always blocked, even if their module

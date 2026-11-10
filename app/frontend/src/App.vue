@@ -30,6 +30,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
             :mode="mode"
             :activePage="activePage"
             :completedPages="completedPages"
+            :hiddenPages="hiddenPages"
             @change-page="changePage"
             @change-mode="changeMode"
         />
@@ -100,6 +101,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :socket="socket"
                 :changePage="changePage"
                 :addPageDone="addPageDone"
+                :skipUq="skipUq"
             />
             <PredictedVsFeaturePage
                 v-if="activePage === 'plot'"
@@ -131,6 +133,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :surrogatePage="surrogatePage"
                 :socket="socket"
                 :changePage="changePage"
+                :skipUq="skipUq"
                 @set-loading="setLoading"
                 :convertToBase64="convertToBase64"
             />
@@ -141,6 +144,7 @@ import LoadingIndicator from "./components/LoadingIndicator.vue";
                 :socket="socket"
                 :changePage="changePage"
                 :sendInChunks="sendInChunks"
+                :skipUq="skipUq"
                 @set-loading="setLoading"
             />
             <MeasurementsPage
@@ -249,6 +253,21 @@ export default {
         ImageLightbox,
         PredictedVsFeaturePage,
     },
+    computed: {
+        // Probabilistic weather-effect models (MDN/CRPS) don't support the UQ page,
+        // so it's dropped from the sidebar and from the Next/Back flow.
+        skipUq() {
+            return this.mode === "subtracting" && ["MDN", "CRPS"].includes(this.surrogatePage.trainedModelType);
+        },
+        hiddenPages() {
+            return this.skipUq ? ["uq"] : [];
+        },
+    },
+    watch: {
+        skipUq(skip) {
+            if (skip && this.activePage === "uq") this.changePage("surrogate");
+        },
+    },
     methods: {
         getDefaultData() {
             return {
@@ -271,6 +290,8 @@ export default {
                     },
                     inputStats: {},
                     qoiTable: {},
+                    nModes: 0,
+                    nNodes: 0,
                     samples: [],
                 },
                 surrogatePage: {
@@ -296,12 +317,9 @@ export default {
                             trainConfig: {},
                         },
                         gbtConfig: {
-                            initConfig: {
-                                gbt_method: "xgboost",
-                            },
                             trainConfig: {
-                                maxDepth: null,
-                                numOfIter: null,
+                                maxDepth: 3,
+                                numOfIter: 150,
                             },
                         },
                         nnConfig: {
@@ -326,13 +344,13 @@ export default {
                                         dropout: 0.0,
                                     },
                                 ],
-                                outputAF: "",
+                                outputAF: "none",
                             },
                             trainConfig: {
-                                optimizer: "",
-                                loss: "",
-                                epochs: null,
-                                batch_size: null,
+                                optimizer: "adam",
+                                loss: "mse",
+                                epochs: 5,
+                                batch_size: 64,
                             },
                         },
                         mdnConfig: {
@@ -342,14 +360,13 @@ export default {
                         },
                         crpsConfig: {
                             trainConfig: {
-                                numSamplers: 4,
+                                numSamplers: 30,
                             },
                         },
                         mosaicConfig: {
                             resolution: 0.6,
                             maxDoaFrequencies: 4,
                             maxDoaEigenvectors: 5,
-                            classificationMethod: "SVC",
                             svcConfig: {
                                 C: 1.0,
                                 kernel: "rbf",
@@ -358,37 +375,22 @@ export default {
                             },
                         },
                     },
-                    tooltips: {
-                        split: false,
-                        modelType: false,
-                        gpc: {
-                            degOfPoly: false,
-                        },
-                        gbt: {
-                            method: false,
-                            maxDepth: false,
-                            numOfIter: false,
-                        },
-                        nn: {
-                            outputAF: false,
-                            loss: false,
-                            optimizer: false,
-                            epochs: false,
-                            batchSize: false,
-                        },
-                    },
                     trainResult: "",
+                    // Type of the model being trained / currently trained (or uploaded),
+                    // independent of the editable modelConfig dropdowns.
+                    trainingModelType: "",
+                    trainedModelType: "",
                     overallTrainMetrics: {},
                     individualTrainMetrics: {},
                     selectedQoIForMetric: null,
                     mosaicSubdomains: [],
                     mosaicMode: 1,
-                    mosaicNSamples: 1000,
                     mosaicPlots: {
                         spaceDivision: null,
                         referenceEigenvectors: null,
                         referenceCorrelation: null,
                     },
+                    mosaicModalValidation: null,
                 },
                 uqPage: {
                     mode: "global",
@@ -430,6 +432,10 @@ export default {
                     multiPlots: [],
                     mean: null,
                     variance: null,
+                    mcmcAnimation: null, // object URL of the MP4; the server re-sends it after a reload
+                    mcmcAnimationPending: false,
+                    mcmcAnimationError: null,
+                    mcmcProgress: null, // { phase, step, total, fraction } while an update runs
                 },
                 climateResiliencePage: {
                     longitude: 11.2499,
@@ -459,6 +465,7 @@ export default {
             const pendingMode = this.pendingMode;
             this.showConfirm = false;
             socket.emit("clear_session");
+            this.setMcmcAnimation(null);
             Object.assign(this.$data, this.getDefaultData());
             this.mode = pendingMode;
             socket.emit("mode", this.mode);
@@ -466,6 +473,30 @@ export default {
         },
         cancelChangeMode() {
             this.showConfirm = false;
+        },
+        saveUiState() {
+            // A tab with no progress mustn't replace the session another tab left behind.
+            if (this.mode === "home") return;
+            const { isLoading, showConfirm, pendingMode, uploadInProgress, ...state } = this.$data;
+            const save = (state) => {
+                const entry = JSON.stringify({ sessionId: this._sessionId, state });
+                // sessionStorage covers a reload even if another tab overwrites localStorage meanwhile.
+                sessionStorage.setItem("ui_state", entry);
+                localStorage.setItem("ui_state", entry);
+            };
+            try {
+                // Samples are replayed by the server and are the likeliest thing to exceed the storage quota.
+                save({
+                    ...state,
+                    variablePage: { ...state.variablePage, samples: [] },
+                    // Object URLs die with the page; the server replays the video on restore.
+                    updatePage: { ...state.updatePage, mcmcAnimation: null, mcmcAnimationPending: false, mcmcProgress: null },
+                });
+            } catch {
+                const { mode, activePage, completedPages } = state;
+                save({ mode, activePage, completedPages });
+            }
+            localStorage.setItem("session_token", sessionStorage.getItem("session_token"));
         },
         addPageDone(page) {
             if (this.completedPages.includes(page)) return;
@@ -479,6 +510,10 @@ export default {
         },
         setLoading(value) {
             this.isLoading = value;
+        },
+        setMcmcAnimation(data) {
+            if (this.updatePage.mcmcAnimation) URL.revokeObjectURL(this.updatePage.mcmcAnimation);
+            this.updatePage.mcmcAnimation = data ? URL.createObjectURL(new Blob([data], { type: "video/mp4" })) : null;
         },
         generateId() {
             return "_" + Math.random().toString(36).slice(2, 9);
@@ -567,6 +602,21 @@ export default {
         socket.on("connect", () => {
             console.log("Connected to server");
         });
+        window.addEventListener("pagehide", this.saveUiState);
+        // Arrives before the server replays its data, which then updates this state.
+        // If the server no longer has the session, the saved state would point at data that's gone.
+        socket.on("session", ({ id, restored }) => {
+            this._sessionId = id;
+            let saved = null;
+            for (const store of [sessionStorage, localStorage]) {
+                const entry = JSON.parse(store.getItem("ui_state"));
+                if (entry?.sessionId !== id) continue;
+                saved ??= entry.state;
+                // A later reconnect on the open page mustn't re-apply this older state.
+                store.removeItem("ui_state");
+            }
+            if (restored && saved) Object.assign(this.$data, saved);
+        });
         socket.on("error", (data) => {
             console.log("error: ", data);
             // A chunked upload that fails validation can emit the same error
@@ -602,6 +652,7 @@ export default {
                 variable["id"] = this.generateId();
             }
             this.surrogatePage.modelConfig = deepMerge(this.surrogatePage.modelConfig, modelConfig);
+            this.surrogatePage.trainedModelType = modelConfig?.modelType ?? "";
             this.addPageDone("variables");
             this.addPageDone("sample");
             this.addPageDone("surrogate");
@@ -620,12 +671,19 @@ export default {
             const parsed = JSON.parse(data);
             this.variablePage.qoiTable = parsed;
         });
+        socket.on("modes_and_nodes", ({ nModes, nNodes }) => {
+            this.variablePage.nModes = nModes;
+            this.variablePage.nNodes = nNodes;
+        });
         socket.on("features_stats", (data) => {
             const parsed = JSON.parse(data);
             this.variablePage.inputStats = parsed;
         });
         socket.on("train_result", (data) => {
             this.surrogatePage.trainResult = data;
+            if (data === "Done") {
+                this.surrogatePage.trainedModelType = this.surrogatePage.trainingModelType;
+            }
         });
         socket.on("train_metrics", (data) => {
             this.surrogatePage.overallTrainMetrics = data["overall"];
@@ -642,6 +700,9 @@ export default {
         });
         socket.on("mosaic_reference_eigenvectors_plot", (data) => {
             this.setImageFromPayload((img) => { this.surrogatePage.mosaicPlots.referenceEigenvectors = img; }, data);
+        });
+        socket.on("mosaic_modal_validation_plot", (data) => {
+            this.setImageFromPayload((img) => { this.surrogatePage.mosaicModalValidation = img; }, data);
         });
         socket.on("mosaic_reference_correlation_plot", (data) => {
             this.setImageFromPayload((img) => { this.surrogatePage.mosaicPlots.referenceCorrelation = img; }, data);
@@ -739,7 +800,24 @@ export default {
             this.updatePage.mean = data["mean"];
             this.updatePage.variance = data["variance"];
             this.updatePage.map = data["map"];
+            this.updatePage.mcmcProgress = null;
             this.setLoading(false);
+            // The server renders the walk animation right after this event.
+            this.setMcmcAnimation(null);
+            this.updatePage.mcmcAnimationPending = true;
+            this.updatePage.mcmcAnimationError = null;
+        });
+        socket.on("mcmc_progress", (data) => {
+            this.updatePage.mcmcProgress = data;
+        });
+        socket.on("mcmc_animation", (data) => {
+            this.setMcmcAnimation(data);
+            this.updatePage.mcmcAnimationPending = false;
+            this.updatePage.mcmcAnimationError = null;
+        });
+        socket.on("mcmc_animation_error", (message) => {
+            this.updatePage.mcmcAnimationPending = false;
+            this.updatePage.mcmcAnimationError = message;
         });
         socket.on("update_multi", (data) => {
             const promises = data.map((plot) => this.convertToBase64(plot));

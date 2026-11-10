@@ -9,7 +9,7 @@
         />
         </div>
 
-        <BackButton :prevPage="'uq'" :changePage="changePage" />
+        <BackButton :prevPage="skipUq ? 'surrogate' : 'uq'" :changePage="changePage" />
 
         <!-- Feature Selection Card -->
         <div class="card-pro content-card mb-4 mt-4">
@@ -193,6 +193,7 @@ export default {
         OutputLoader,
     },
     props: {
+        skipUq: { type: Boolean, default: false },
         variablePage: {
             type: Object,
             required: true,

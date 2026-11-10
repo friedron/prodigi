@@ -77,10 +77,6 @@
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label fw-bold">Samples</label>
-                        <input type="number" class="form-control" min="1" v-model.number="surrogatePage.mosaicNSamples" />
-                    </div>
-                    <div class="col-md-3">
                         <button class="btn-pro" @click="generateMosaicPlots" :disabled="isGeneratingMosaicPlots">
                             <span v-if="isGeneratingMosaicPlots" class="btn-spinner"></span>
                             <i v-else class="bi bi-image"></i>
@@ -604,10 +600,13 @@ export default {
         generateMosaicPlots() {
             if (!this.surrogatePage.mosaicMode) return;
             this.isGeneratingMosaicPlots = true;
-            this._mosaicPlotsPending = 3;
+            // A single-subdomain mode only produces the eigenvectors plot.
+            const subdomains = this.surrogatePage.mosaicSubdomains[this.surrogatePage.mosaicMode - 1];
+            this._mosaicPlotsPending = subdomains === 1 ? 1 : 3;
+            this.surrogatePage.mosaicPlots.spaceDivision = null;
+            this.surrogatePage.mosaicPlots.referenceCorrelation = null;
             this.socket.emit("mosaic_variable_space_exploration", {
                 mode: this.surrogatePage.mosaicMode,
-                nSamples: this.surrogatePage.mosaicNSamples,
             });
         },
     },

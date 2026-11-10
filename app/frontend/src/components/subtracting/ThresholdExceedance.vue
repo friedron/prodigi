@@ -9,7 +9,7 @@
             />
         </div>
 
-        <BackButton :prevPage="'uq'" :changePage="changePage" />
+        <BackButton :prevPage="skipUq ? 'surrogate' : 'uq'" :changePage="changePage" />
 
         <!-- Monitoring Data Setup -->
         <div class="card-pro content-card mb-4 mt-4">
@@ -230,6 +230,7 @@ export default {
         OutputLoader,
     },
     props: {
+        skipUq: { type: Boolean, default: false },
         variablePage: { type: Object, required: true },
         subtractPage: { type: Object, required: true },
         socket: { type: Object, required: true },

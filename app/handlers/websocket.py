@@ -10,7 +10,9 @@ import sys
 import tempfile
 import time
 import uuid
+import contextlib
 import functools
+from types import SimpleNamespace
 import bimquake
 import pandas as pd
 import numpy as np
@@ -26,13 +28,14 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table as RLTable, TableStyle
 
 # Installed packages
-import mosaictools
 from digital_twinning import (
-    PredictiveModel, DigitalTwin, JointManager, utils,
-    get_number_of_subdomains, plot_variable_space_exploration,
+    DigitalTwin, JointManager, utils,
+    gPCE, GBT, DNN, LinReg, MOSAIC, MDN, CRPS,
+    get_modes_and_nodes, plot_modal_validation_errors,
 )
-from digital_twinning.unv_example_functions import preprocess_modeshape_data as ppm
-from digital_twinning.utils.object_utils import generate_stdrn_simparamset
+from digital_twinning.model_updating.mcmc_animation import animate_MCMC_walk
+from digital_twinning.utils import preprocess_modeshape_data as ppm
+from uncertain_variables import generate_stndrn_variable_set
 from uncertain_variables.variable_set import VariableSet
 from uncertain_variables.variable import Variable
 from uncertain_variables.distributions import NormalDistribution, UniformDistribution, LogNormalDistribution, BetaDistribution, ExponentialDistribution, TranslatedDistribution
@@ -47,11 +50,6 @@ from utils.preprocess_modeshape_data import (
     scatter_plot,
 )
 import utils.get_openmeteo_data as openmeteo
-from utils.probabilistic_models import (
-    MDNPredictiveModel,
-    CRPSPredictiveModel,
-    plot_predicted_vs_feature,
-)
 from handlers.rate_limiter import RateLimiter
 from handlers.safe_unpickle import restricted_loads
 
@@ -100,31 +98,51 @@ class AppHandler(socketio.AsyncNamespace):
         except Exception as e:
             logging.error(f"Error during cleanup: {e}")
 
-    def get_or_create_session_id(self, environ):
-        cookies = environ.get("HTTP_COOKIE", "")
-        if cookies:
-            cookie_dict = dict(c.split("=", 1) for c in cookies.split("; ") if "=" in c)
-            encrypted_id = cookie_dict.get("session_id")
-            if encrypted_id:
-                try:
-                    decoded = tornado.web.decode_signed_value(
-                        secret=self.application.settings["cookie_secret"],
-                        name="session_id",
-                        value=encrypted_id,
-                        max_age_days=3,
-                    )
-                    if decoded:
-                        return decoded.decode()
-                except Exception as e:
-                    logging.error(f"Session decoding error: {e}")
+    def decode_session_token(self, token):
+        if token:
+            try:
+                decoded = tornado.web.decode_signed_value(
+                    secret=self.application.settings["cookie_secret"],
+                    name="session_id",
+                    value=token,
+                    max_age_days=3,
+                )
+                if decoded:
+                    return decoded.decode()
+            except Exception as e:
+                logging.error(f"Session decoding error: {e}")
+        return None
+
+    def get_or_create_session_id(self, auth):
+        auth = auth or {}
+        session_id = self.decode_session_token(auth.get("session"))
+        if session_id:
+            return session_id
+        # A new tab or browser start resumes the last session left, unless it's still open in another tab.
+        last_id = self.decode_session_token(auth.get("last"))
+        if last_id:
+            current_sid = self.socket_to_session.get(last_id)
+            if not (current_sid and self.server.manager.is_connected(current_sid, self.namespace)):
+                return last_id
         return str(uuid.uuid4())
 
     async def on_connect(self, sid, environ, auth=None):
         logging.info(f"Client connected: {sid}")
         self.data[sid] = {}
         self.last_activity[sid] = time.time()
-        session_id = self.get_or_create_session_id(environ)
-        await self.restore_client_data(sid, session_id)
+        session_id = self.get_or_create_session_id(auth)
+        # The tab keeps this token and sends it back on reconnect; a cookie can't do this
+        # because the socket's origin isn't necessarily the one serving the page.
+        token = tornado.web.create_signed_value(
+            self.application.settings["cookie_secret"], "session_id", session_id
+        ).decode()
+        restored = bool(self.data.get(self.socket_to_session.get(session_id)))
+        await self.emit("session", {"id": session_id, "token": token, "restored": restored}, to=sid)
+        try:
+            await self.restore_client_data(sid, session_id)
+        except Exception as e:
+            # An exception here would make Socket.IO reject the connection, leaving the page with no socket.
+            logging.error(f"Restore session error: {e}")
         self.socket_to_session[session_id] = sid
 
     async def on_disconnect(self, sid):
@@ -147,10 +165,10 @@ class AppHandler(socketio.AsyncNamespace):
         if d.get("mode"): await self.emit("mode", d["mode"], to=sid)
         if d.get("model"): await self.send_model(sid)
         if d.get("variableset"): await self.send_variableset(sid)
-        if d.get("zmean"): await self.emit("zmean", d["zmean"].to_dict(), to=sid)
-        if d.get("sigma"): await self.emit("sigma", d["sigma"].to_dict(), to=sid)
-        if d.get("subtract_input"): await self.emit("subtract_input", d["subtract_input"].to_dict(), to=sid)
-        if d.get("subtract_output"): await self.emit("subtract_output", d["subtract_output"].to_dict(), to=sid)
+        if d.get("zmean") is not None: await self.emit("zmean", d["zmean"].to_dict(), to=sid)
+        if d.get("sigma") is not None: await self.emit("sigma", d["sigma"].to_dict(), to=sid)
+        if d.get("subtract_input") is not None: await self.emit("subtract_input", d["subtract_input"].to_dict(), to=sid)
+        if d.get("subtract_output") is not None: await self.emit("subtract_output", d["subtract_output"].to_dict(), to=sid)
         
         if d.get("models"):
             await self.emit("models", self.format_models(d["models"]), to=sid)
@@ -159,9 +177,12 @@ class AppHandler(socketio.AsyncNamespace):
         
         if d.get("building_data"): await self.emit("building_data", json.dumps(d["building_data"]), to=sid)
         if d.get("climate_fig"): await self.emit("climate_fig", d["climate_fig"], to=sid)
-        if d.get("sample") is not None: await self.emit("sample", d["sample"].tolist(), to=sid)
-        if d.get("qoi") is not None: await self.emit("qoi", d["qoi"].describe().to_json(), to=sid)
-        
+        if d.get("mcmc_animation"): await self.emit("mcmc_animation", d["mcmc_animation"], to=sid)
+        if d.get("sample") is not None: await self.emit("sample", d["sample"].to_numpy().tolist(), to=sid)
+        if d.get("qoi") is not None:
+            await self.emit("qoi", d["qoi"].describe().to_json(), to=sid)
+            await self.send_modes_and_nodes(sid, d["qoi"])
+
         if d.get("location_data"):
             module = "earthquake" if "ParaTR" in d["location_data"] else "climate"
             await self.emit("location_data", {
@@ -177,7 +198,7 @@ class AppHandler(socketio.AsyncNamespace):
             return False
         return True
 
-    def fig_to_binary(self, fig):
+    def _render_png(self, fig):
         buf = io.BytesIO()
         if hasattr(fig, 'savefig'):
             fig.savefig(buf, format="png")
@@ -185,6 +206,10 @@ class AppHandler(socketio.AsyncNamespace):
             pio.write_image(fig, buf, format="png")
         buf.seek(0)
         return buf.read()
+
+    async def fig_to_binary(self, fig):
+        # Rendering is slow and CPU-bound; keep it off the event loop.
+        return await asyncio.to_thread(self._render_png, fig)
 
     async def recieve_chunks(self, sid, data):
         name = data["name"]
@@ -220,41 +245,34 @@ class AppHandler(socketio.AsyncNamespace):
             res.append(p)
         return res
 
-    def is_mosaic_model(self, model):
-        # Old sessions saved a raw mosaictools.Mosaic directly; new ones wrap it
-        # in PredictiveModel(method="Mosaic") -> MosaicModel -> mosaictools.Mosaic.
-        return isinstance(model, mosaictools.Mosaic) or (
-            isinstance(model, PredictiveModel) and model.method == "Mosaic"
-        )
-
-    def unwrap_mosaic_model(self, model):
-        return model if isinstance(model, mosaictools.Mosaic) else model.model.model
-
     def format_model_config(self, model):
-        if self.is_mosaic_model(model):
-            raw = self.unwrap_mosaic_model(model)
-            kwargs = raw.class_kwargs or {}
-            return {
-                "modelType": "MOSAIC",
-                "mosaicConfig": {
-                    "resolution": raw.resolution,
-                    "maxDoaFrequencies": raw.max_freq_degree,
-                    "maxDoaEigenvectors": raw.max_vect_degree,
-                    "classificationMethod": raw.classification_method.upper(),
-                    "svcConfig": {
-                        "C": kwargs.get("C", 1.0),
-                        "kernel": kwargs.get("kernel", "rbf"),
-                        "degree": kwargs.get("degree", 3),
-                        "gamma": kwargs.get("gamma", "scale"),
-                    },
+        # The model class names match the UI's modelType values.
+        m_type = type(model).__name__
+        cfg = {"modelType": m_type}
+        if m_type == "MOSAIC":
+            kwargs = model.class_kwargs or {}
+            cfg["mosaicConfig"] = {
+                "resolution": model.resolution,
+                "maxDoaFrequencies": model.max_freq_degree,
+                "maxDoaEigenvectors": model.max_vect_degree,
+                "svcConfig": {
+                    "C": kwargs.get("C", 1.0),
+                    "kernel": kwargs.get("kernel", "rbf"),
+                    "degree": kwargs.get("degree", 3),
+                    "gamma": kwargs.get("gamma", "scale"),
                 },
             }
-        cfg = {"modelType": model.method}
-        key_map = {"gPCE": "gpcConfig", "GBT": "gbtConfig", "DNN": "nnConfig"}
-        if model.method in key_map:
-            cfg[key_map[model.method]] = {
-                "trainConfig": model.train_config,
-                "initConfig": model.init_config
+        elif m_type == "gPCE":
+            cfg["gpcConfig"] = {"trainConfig": {}, "initConfig": {"p": model.p}}
+        elif m_type == "GBT":
+            params = model.model.get_params()
+            cfg["gbtConfig"] = {
+                "trainConfig": {"maxDepth": params.get("max_depth"), "numOfIter": params.get("n_estimators")},
+            }
+        elif m_type == "DNN":
+            cfg["nnConfig"] = {
+                "trainConfig": getattr(model, "train_config", {}),
+                "initConfig": {"layers": model.layers, "outputAF": model.outputAF},
             }
         return cfg
 
@@ -264,14 +282,13 @@ class AppHandler(socketio.AsyncNamespace):
     # --- Data Emitters ---
     async def send_model(self, sid):
         m = self.data[sid]["model"]
-        if self.is_mosaic_model(m):
-            raw = self.unwrap_mosaic_model(m)
+        if isinstance(m, MOSAIC):
             await self.emit("train_result", "Done", to=sid)
             await self.emit("load_model", {
-                "variables": self.format_variables(raw.Q.variables),
+                "variables": self.format_variables(m.Q.variables),
                 "modelConfig": self.format_model_config(m)
             }, to=sid)
-            subdomains = await asyncio.to_thread(raw.get_number_of_subdomains)
+            subdomains = await asyncio.to_thread(m.get_number_of_subdomains)
             await self.emit("mosaic_subdomains", np.asarray(subdomains).astype(int).tolist(), to=sid)
             return
         await self.emit("sample", m.samples.to_numpy().tolist(), to=sid)
@@ -283,6 +300,98 @@ class AppHandler(socketio.AsyncNamespace):
         await self.emit("qoi", m.QoI.describe().to_json(), to=sid)
         await self.emit("outputQoi", list(m.QoI_names), to=sid)
         await self.emit("features_stats", m.samples.describe().to_json(), to=sid)
+
+    async def send_modes_and_nodes(self, sid, qoi_df):
+        # MOSAIC QoI columns are "f.<mode>" and "S.<mode>.<node>.<dir>"; for any
+        # other naming this yields (0, 0), so it's safe to send for every QoI load.
+        try:
+            n_modes, n_nodes = get_modes_and_nodes(qoi_df)
+        except Exception as e:
+            logging.warning(f"Could not infer modes/nodes from QoI columns: {e}")
+            n_modes, n_nodes = 0, 0
+        await self.emit("modes_and_nodes", {"nModes": int(n_modes), "nNodes": int(n_nodes)}, to=sid)
+
+    async def send_modal_validation(self, sid, model, x_val, y_val):
+        # Boxplots of the per-mode relative frequency and MAC errors on the validation split.
+        try:
+            def _plot():
+                freq_errors, mac_errors = model.modal_validation(x_val, y_val)
+                return plot_modal_validation_errors(freq_errors, mac_errors)
+            fig = await asyncio.to_thread(_plot)
+            await self.emit("mosaic_modal_validation_plot", await self.fig_to_binary(fig), to=sid)
+        except Exception as e:
+            logging.error(f"Modal validation error: {e}")
+            await self.emit("error", f"Modal validation error: {e}", to=sid)
+
+    async def send_mcmc_animation(self, sid, render):
+        # `render(path)` writes the MCMC random-walk MP4 to `path` (needs ffmpeg). It runs
+        # after the "update" event, so a failure here only loses the video, not the results.
+        self.data[sid].pop("mcmc_animation", None)
+
+        def _render():
+            fd, path = tempfile.mkstemp(suffix=".mp4")
+            os.close(fd)
+            try:
+                render(path)
+                with open(path, "rb") as f:
+                    return f.read()
+            finally:
+                if os.path.exists(path):
+                    os.remove(path)
+
+        try:
+            video = await asyncio.to_thread(_render)
+        except Exception as e:
+            logging.error(f"MCMC animation error: {e}")
+            await self.emit("mcmc_animation_error", str(e), to=sid)
+            return
+        self.data[sid]["mcmc_animation"] = video
+        await self.emit("mcmc_animation", video, to=sid)
+
+    def _track_mcmc_progress(self, sid, target, nwalkers, nburn, niter):
+        # Emits "mcmc_progress" while `target` (DigitalTwin or JointManager) runs emcee, which
+        # calls get_logprob once per walker per step plus once per walker for the start, so
+        # calls // nwalkers is the step. Returns a function that removes the hook.
+        loop = asyncio.get_running_loop()
+        original = target.get_logprob
+        nwalkers, nburn, niter = max(int(nwalkers), 1), int(nburn), int(niter)
+        total = nburn + niter
+        state = {"calls": 0, "last_step": -1, "last_emit": 0.0}
+
+        def counted(*args, **kwargs):
+            state["calls"] += 1
+            step = min(max(state["calls"] - nwalkers, 0) // nwalkers, total)
+            now = time.monotonic()
+            if step != state["last_step"] and (now - state["last_emit"] >= 0.2 or step == total):
+                state["last_step"], state["last_emit"] = step, now
+                burning = step < nburn
+                payload = {
+                    "phase": "burn-in" if burning else "sampling",
+                    "step": step if burning else step - nburn,
+                    "total": nburn if burning else niter,
+                    "fraction": step / total if total else 1.0,
+                }
+                asyncio.run_coroutine_threadsafe(self.emit("mcmc_progress", payload, to=sid), loop)
+            return original(*args, **kwargs)
+
+        target.get_logprob = counted
+        return lambda: target.__dict__.pop("get_logprob", None)
+
+    @staticmethod
+    def _render_joint_animation(joint_manager, index, path):
+        # JointManager has no animate method, so present model `index`'s slice of the
+        # joint chain with the DigitalTwin attributes animate_MCMC_walk reads. The
+        # joint sampler doesn't keep its burn-in, so only the sampling steps are shown.
+        Q = joint_manager.models[index].Q
+        chain = np.asarray(joint_manager.sampler.get_chain())[:, :, joint_manager.indices[index]]
+        map_df = joint_manager.get_MAP_by_model(scaled=True)[index]
+        walk = SimpleNamespace(
+            model=SimpleNamespace(Q=Q),
+            sampler=SimpleNamespace(get_chain=lambda: chain),
+            burn_chain=None,
+            get_MAP=lambda: map_df,
+        )
+        animate_MCMC_walk(walk, Q.sample(1000), filename=path, include_burn=False, map=True)
 
     async def send_variableset(self, sid):
         await self.emit("variables", self.format_variables(self.data[sid]["variableset"].variables), to=sid)
@@ -356,19 +465,29 @@ class AppHandler(socketio.AsyncNamespace):
             logging.error(f"Sampling error: {e}")
             await self.emit("error", f"Sampling error: {e}", to=sid)
 
+    @staticmethod
+    def ensure_dataframes(model):
+        """The app works on DataFrames; a model trained from plain arrays stores arrays."""
+        if not isinstance(model.samples, pd.DataFrame):
+            model.samples = pd.DataFrame(model.samples, columns=model.Q.variable_names())
+        if not isinstance(model.QoI, pd.DataFrame):
+            model.QoI = pd.DataFrame(model.QoI, columns=model.QoI_names)
+
     async def on_load_model(self, sid, data):
         try:
             complete, name = await self.recieve_chunks(sid, data)
             if not complete: return
-            
+
             model = await asyncio.to_thread(restricted_loads, complete)
-            if self.is_mosaic_model(model):
-                self.data[sid].update({"model": model, "variableset": model.Q})
-            else:
-                self.data[sid].update({
-                    "model": model, "variableset": model.Q,
-                    "qoi": model.QoI, "sample": model.samples
-                })
+            self.ensure_dataframes(model)
+            # A loaded model has no split from this session; drop any left over from earlier training.
+            self.data[sid].pop("train_val_split", None)
+            # samples/QoI hold the features/labels selected when the model was trained.
+            self.data[sid].update({
+                "model": model, "variableset": model.Q,
+                "sample": model.samples, "qoi": model.QoI,
+                "selected_sample": model.samples, "selected_qoi": model.QoI,
+            })
             await self.send_model(sid)
         except Exception as e:
             logging.error(f"Load model error: {e}")
@@ -389,6 +508,8 @@ class AppHandler(socketio.AsyncNamespace):
         await self._load_csv_chunk(sid, data, store_key="qoi", loaded_event="labels_loaded",
                                     data_event="qoi", formatter=lambda df: df.describe().to_json(),
                                     error_label="Load QoI error")
+        if self.data[sid].get("qoi") is not None:
+            await self.send_modes_and_nodes(sid, self.data[sid]["qoi"])
 
     async def on_qoi_unv(self, sid, data):
         # Consume the upload first so the buffered chunks are always drained and
@@ -463,6 +584,7 @@ class AppHandler(socketio.AsyncNamespace):
             await self.emit(
                 "qoi", self.data[sid]["qoi"].describe().to_json(), to=sid
             )
+            await self.send_modes_and_nodes(sid, self.data[sid]["qoi"])
             await self.emit("labels_loaded", {"filename": filename}, to=sid)
         except Exception as e:
             await self.emit("error", f"Error handling event load_unv: {str(e)}", to=sid)
@@ -550,7 +672,7 @@ class AppHandler(socketio.AsyncNamespace):
                 param2,
                 hue_col=data["hue"] if "hue" in data and data["hue"] != "" else None,
             )
-            binary_fig = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_fig = await self.fig_to_binary(fig)
             await self.emit("subtracted_plot_scatter", binary_fig, to=sid)
         except Exception as e:
             await self.emit("error", str(e), to=sid)
@@ -582,7 +704,7 @@ class AppHandler(socketio.AsyncNamespace):
             self.data[sid]["remained_effects"] = remained_effects_df
             self.data[sid]["reference_statistics"] = reference_statistics
             self.data[sid]["monitoring_statistics"] = monitoring_statistics
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit(
                 "subtract_data",
                 {
@@ -626,10 +748,27 @@ class AppHandler(socketio.AsyncNamespace):
     async def on_mode(self, sid, mode):
         self.data[sid]["mode"] = mode
 
+    @staticmethod
+    @contextlib.contextmanager
+    def detached_shap_state(model):
+        """SHAP state on the model (and, for DNN, the inner network) isn't picklable
+        (KernelExplainer) or loadable under restricted_loads (shap.Explanation), and
+        PredictiveModel.__getstate__ only drops the outer `explainer`. Detach `explainer`
+        and `shap_values` for the dump and put them back for later SHAP plots."""
+        holders = [h for h in (model, getattr(model, "model", None)) if hasattr(h, "__dict__")]
+        saved = [(h, {k: h.__dict__.pop(k) for k in ("explainer", "shap_values") if k in h.__dict__})
+                 for h in holders]
+        try:
+            yield
+        finally:
+            for h, state in saved:
+                h.__dict__.update(state)
+
     async def on_save_model(self, sid):
         try:
             model = self.data[sid]["model"]
-            serialized = model.save_model()
+            with self.detached_shap_state(model):
+                serialized = model.save_model()
             await self.emit("save_model", serialized, to=sid)
         except Exception as e:
             await self.emit("error", f"Error saving model: {str(e)}", to=sid)
@@ -721,12 +860,32 @@ class AppHandler(socketio.AsyncNamespace):
         except Exception as e:
             await self.emit("error", f"Error fetching weather data: {str(e)}", to=sid)
 
+    async def on_download_weather_csv(self, sid, data=None):
+        try:
+            if not await self._check_rate_limit(sid): return
+            df = self.data.get(sid, {}).get("weather_full")
+            if df is None:
+                await self.emit("error", "No weather data has been fetched in this session.", to=sid)
+                return
+            df = df.copy()
+            filename = "weather_data.csv"
+            if "Datetime" in df.columns:
+                start = df["Datetime"].min().strftime('%Y-%m-%d')
+                end = df["Datetime"].max().strftime('%Y-%m-%d')
+                filename = f"weather_data_{start}_{end}.csv"
+                df["Datetime"] = df["Datetime"].dt.strftime('%Y-%m-%d %H:%M:%S')
+                df = df[["Datetime"] + [c for c in df.columns if c != "Datetime"]]
+            csv_text = await asyncio.to_thread(df.to_csv, index=False)
+            await self.emit("weather_csv", {"filename": filename, "csv": csv_text}, to=sid)
+        except Exception as e:
+            await self.emit("error", f"Error exporting weather data: {str(e)}", to=sid)
+
     async def on_exploratory_plot(self, sid, data):
         try:
             if not await self._check_rate_limit(sid): return
             df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
             fig = plot_correlation(df, self.data[sid]["qoi"], mode=data.get("mode", "input-output"))
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("exploratory_plot", binary_data, to=sid)
         except Exception as e:
             await self.emit("error", f"Error generating correlation plot: {str(e)}", to=sid)
@@ -737,7 +896,7 @@ class AppHandler(socketio.AsyncNamespace):
             df = pd.DataFrame(self.data[sid]["sample"], columns=self.data[sid]["variableset"].variable_names())
             fig = scatter_plot(df, self.data[sid]["qoi"], data["param1"], data["param2"],
                               hue_col=data.get("hue") if data.get("hue") else None)
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("exploratory_plot_scatter", binary_data, to=sid)
         except Exception as e:
             await self.emit("error", f"Error generating scatter plot: {str(e)}", to=sid)
@@ -767,11 +926,18 @@ class AppHandler(socketio.AsyncNamespace):
             model = None
             if m_type == "gPCE":
                 p = int(m_cfg["gpcConfig"]["initConfig"]["p"])
-                model = PredictiveModel(variableset, s_labels, m_type, p=p)
-                t_cfg = m_cfg["gpcConfig"]["trainConfig"]
+                model = gPCE(variableset, s_labels, p=p)
+                t_cfg = {}
             elif m_type == "GBT":
-                model = PredictiveModel(variableset, s_labels, m_type, **m_cfg["gbtConfig"]["initConfig"])
-                t_cfg = m_cfg["gbtConfig"]["trainConfig"]
+                # Unset fields keep the model defaults.
+                gbt_train = m_cfg["gbtConfig"]["trainConfig"]
+                gbt_args = {}
+                if gbt_train.get("maxDepth"):
+                    gbt_args["max_depth"] = int(gbt_train["maxDepth"])
+                if gbt_train.get("numOfIter"):
+                    gbt_args["num_of_iter"] = int(gbt_train["numOfIter"])
+                model = GBT(variableset, s_labels, **gbt_args)
+                t_cfg = {}
             elif m_type == "DNN":
                 init = {
                     "layers": [{
@@ -779,10 +945,14 @@ class AppHandler(socketio.AsyncNamespace):
                     } for l in m_cfg["nnConfig"]["initConfig"]["layers"]],
                     "outputAF": m_cfg["nnConfig"]["initConfig"]["outputAF"]
                 }
-                model = PredictiveModel(variableset, s_labels, m_type, **init)
-                t_cfg = m_cfg["nnConfig"]["trainConfig"]
+                model = DNN(variableset, s_labels, **init)
+                # Blank UI fields mean "use the model default".
+                t_cfg = {k: v for k, v in m_cfg["nnConfig"]["trainConfig"].items() if v not in (None, "")}
+                for k in ("epochs", "batch_size"):
+                    if k in t_cfg:
+                        t_cfg[k] = int(t_cfg[k])
             elif m_type == "LinReg":
-                model = PredictiveModel(variableset, s_labels, m_type)
+                model = LinReg(variableset, s_labels)
                 t_cfg = {}
             elif m_type in ("MDN", "CRPS"):
                 init = {
@@ -790,21 +960,32 @@ class AppHandler(socketio.AsyncNamespace):
                         "neurons": int(l["numOfNeurons"]), "activation": l["activationFunction"], "dropout": float(l["dropout"])
                     } for l in m_cfg["nnConfig"]["initConfig"]["layers"]],
                 }
+                # digital_twinning's MDN/CRPS size the network as
+                # input=len(QoI_names), output=Q.num_variables(), so for a
+                # features -> labels model the feature names go in QoI_names and
+                # Q describes the labels.
+                label_set = utils.get_variableset_from_data(y_data)
                 if m_type == "MDN":
-                    init["numComponents"] = int(m_cfg["mdnConfig"]["initConfig"]["numComponents"])
-                    model = MDNPredictiveModel(variableset, s_labels, m_type, **init)
+                    init["n_components"] = int(m_cfg["mdnConfig"]["initConfig"]["numComponents"])
+                    model = MDN(label_set, s_feats, **init)
                 else:
-                    init["numSamplers"] = int(m_cfg["crpsConfig"]["trainConfig"]["numSamplers"])
-                    model = CRPSPredictiveModel(variableset, s_labels, m_type, **init)
-                t_cfg = m_cfg["nnConfig"]["trainConfig"]
+                    init["n_epsilon"] = int(m_cfg["crpsConfig"]["trainConfig"]["numSamplers"])
+                    model = CRPS(label_set, s_feats, **init)
+                nn_train = m_cfg["nnConfig"]["trainConfig"]
+                t_cfg = {}
+                if nn_train.get("epochs") not in (None, ""):
+                    t_cfg["max_epoch"] = int(nn_train["epochs"])
+                if nn_train.get("batch_size") not in (None, ""):
+                    t_cfg["batch_size"] = int(nn_train["batch_size"])
+                if nn_train.get("optimizer"):
+                    t_cfg["optimizer"] = nn_train["optimizer"]
             elif m_type == "MOSAIC":
                 svc_cfg = m_cfg["mosaicConfig"]["svcConfig"]
-                model = PredictiveModel(
-                    variableset, s_labels, "Mosaic",
+                model = MOSAIC(
+                    variableset, s_labels,
                     resolution=float(m_cfg["mosaicConfig"]["resolution"]),
                     max_freq_degree=int(m_cfg["mosaicConfig"]["maxDoaFrequencies"]),
                     max_vect_degree=int(m_cfg["mosaicConfig"]["maxDoaEigenvectors"]),
-                    classification_method=m_cfg["mosaicConfig"]["classificationMethod"].lower(),
                     C=float(svc_cfg["C"]), kernel=svc_cfg["kernel"],
                     degree=int(svc_cfg["degree"]), gamma=svc_cfg["gamma"],
                 )
@@ -817,18 +998,24 @@ class AppHandler(socketio.AsyncNamespace):
                     random_seed=data["splitConfig"]["seed"],
                     split_type=data["splitConfig"]["trainTestSplit"]
                 )
-                await asyncio.to_thread(model.train, x_t, y_t, t_cfg)
-                ind_m, over_m = await asyncio.to_thread(model.evaluate_model, y_t, x_v, y_v)
+                await asyncio.to_thread(functools.partial(model.train, x_t, y_t, **t_cfg))
+                # digital_twinning's MDN/CRPS don't implement evaluate_model yet.
+                if hasattr(model, "evaluate_model"):
+                    ind_m, over_m = await asyncio.to_thread(model.evaluate_model, y_t, x_v, y_v)
+                    ind_m = ind_m.to_dict()
+                else:
+                    ind_m, over_m = {}, {}
                 self.data[sid]["model"] = model
                 self.data[sid]["train_val_split"] = {
                     "x_train": x_t, "x_val": x_v, "y_train": y_t, "y_val": y_v,
                 }
                 await self.emit("outputQoi", y_t.columns.tolist(), to=sid)
                 await self.emit("train_result", "Done", to=sid)
-                await self.emit("train_metrics", {"individual": ind_m.to_dict(), "overall": over_m}, to=sid)
+                await self.emit("train_metrics", {"individual": ind_m, "overall": over_m}, to=sid)
                 if m_type == "MOSAIC":
-                    subdomains = await asyncio.to_thread(get_number_of_subdomains, model)
+                    subdomains = await asyncio.to_thread(model.get_number_of_subdomains)
                     await self.emit("mosaic_subdomains", np.asarray(subdomains).astype(int).tolist(), to=sid)
+                    await self.send_modal_validation(sid, model, x_v, y_v)
         except Exception as e:
             logging.error(f"Training error: {e}")
             await self.emit("train_result", f"Error: {e}", to=sid)
@@ -838,13 +1025,18 @@ class AppHandler(socketio.AsyncNamespace):
             if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             mode = int(data["mode"])
-            n_samples = int(data.get("nSamples") or 1000)
-            fig_space, fig_eigvecs, fig_corr = await asyncio.to_thread(
-                plot_variable_space_exploration, model, mode, n_samples
+            # Order is (eigenvectors, space division, correlation); the last two are
+            # None when the mode has a single subdomain.
+            fig_eigvecs, fig_space, fig_corr = await asyncio.to_thread(
+                model.plot_variable_space_exploration, mode
             )
-            await self.emit("mosaic_space_division_plot", await asyncio.to_thread(self.fig_to_binary, fig_space), to=sid)
-            await self.emit("mosaic_reference_eigenvectors_plot", await asyncio.to_thread(self.fig_to_binary, fig_eigvecs), to=sid)
-            await self.emit("mosaic_reference_correlation_plot", await asyncio.to_thread(self.fig_to_binary, fig_corr), to=sid)
+            for event, fig in (
+                ("mosaic_space_division_plot", fig_space),
+                ("mosaic_reference_eigenvectors_plot", fig_eigvecs),
+                ("mosaic_reference_correlation_plot", fig_corr),
+            ):
+                if fig is not None:
+                    await self.emit(event, await self.fig_to_binary(fig), to=sid)
         except Exception as e:
             await self.emit("error", f"Error generating variable space exploration plots: {e}", to=sid)
 
@@ -872,44 +1064,14 @@ class AppHandler(socketio.AsyncNamespace):
             await self.emit("error", f"Load evaluation set error: {e}", to=sid)
 
     async def on_predicted_vs_feature(self, sid, data):
-        try:
-            if not await self._check_rate_limit(sid): return
-            model = self.data[sid].get("model")
-            split = self.data[sid].get("train_val_split")
-            if model is None or split is None:
-                await self.emit("error", "Train a model before plotting.", to=sid)
-                return
-            if not hasattr(model, "predict_samples"):
-                await self.emit("error", "This plot needs a probabilistic model (MDN or CRPS).", to=sid)
-                return
-
-            feature = data["feature"]
-            qoi = data.get("qoi") or None
-            ci_level = float(data.get("ciLevel") or 0.95)
-            n_samples = int(data.get("nSamples") or 2000)
-
-            x_test = y_test = None
-            eval_df = self.data[sid].get("eval_set")
-            if eval_df is not None:
-                feat_cols = list(model.Q.variable_names())
-                qoi_cols = list(model.QoI_names)
-                missing = [c for c in feat_cols + qoi_cols if c not in eval_df.columns]
-                if missing:
-                    await self.emit("error", f"Evaluation set is missing columns: {missing}", to=sid)
-                    return
-                keep = eval_df[feat_cols + qoi_cols].dropna()
-                x_test, y_test = keep[feat_cols], keep[qoi_cols]
-
-            fig = await asyncio.to_thread(
-                plot_predicted_vs_feature,
-                model, split["x_train"], split["x_val"], split["y_train"], split["y_val"],
-                feature, x_test, y_test, qoi, ci_level, n_samples,
-            )
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
-            await self.emit("predicted_vs_feature_plot", binary_data, to=sid)
-        except Exception as e:
-            logging.error(f"Predicted-vs-feature plot error: {e}")
-            await self.emit("error", f"Error generating plot: {e}", to=sid)
+        # The plot needs predictive draws per input row; MDN/CRPS.inference only returns
+        # draws for the first row.
+        await self.emit(
+            "error",
+            "The Predicted vs. Feature plot isn't available yet: digital_twinning's MDN/CRPS "
+            "models can't draw predictive samples for each input row.",
+            to=sid,
+        )
 
     async def on_mean_var(self, sid):
         try:
@@ -926,13 +1088,19 @@ class AppHandler(socketio.AsyncNamespace):
                 "error", f"Error computing mean and variance: {str(e)}", to=sid
             )
     
+    def _shap_data(self, sid):
+        """Held-out features for SHAP, so explanations aren't computed on training
+        data. Models loaded from file have no stored split and use all samples."""
+        split = self.data[sid].get("train_val_split")
+        return pd.DataFrame(split["x_val"] if split else self.data[sid]["selected_sample"])
+
     async def on_shap_beeswarm(self, sid, param_name):
         try:
             if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
-            X_test = pd.DataFrame(self.data[sid]["sample"])
+            X_test = self._shap_data(sid)
             fig = await model.plot_shap_beeswarm(X_test=X_test, param_name=param_name, silent=True)
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("beeswarm_plot", binary_data, to=sid)
         except Exception as e:
             await self.emit(
@@ -944,8 +1112,8 @@ class AppHandler(socketio.AsyncNamespace):
             if not await self._check_rate_limit(sid): return
             model = self.data[sid]["model"]
             values = data
-            fig = await model.plot_shap_multiple_waterfalls(X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, silent=True)
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            fig = await model.plot_shap_multiple_waterfalls(X_test=self._shap_data(sid), q=values, silent=True)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("shap_plot_multi", binary_data, to=sid)
         except Exception as e:
             logging.error(f"Error generating multiple waterfall plot: {e}")
@@ -960,9 +1128,9 @@ class AppHandler(socketio.AsyncNamespace):
             qoi = data["qoi"]
             values = data["values"]
             fig = await model.plot_shap_single_waterfall(
-                X_test=pd.DataFrame(self.data[sid]["selected_sample"]), q=values, param_name=qoi, silent=True
+                X_test=self._shap_data(sid), q=values, param_name=qoi, silent=True
             )
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("shap_plot_single", binary_data, to=sid)
         except Exception as e:
             logging.error(f"Error generating single waterfall plot: {e}")
@@ -979,7 +1147,7 @@ class AppHandler(socketio.AsyncNamespace):
             self.data[sid].update({"partial_var_df": p_var, "sobol_index_df": s_idx})
             fig = await asyncio.to_thread(m.plot_sobol_sensitivity, self.data[sid]["selected_qoi"], max_index=data)
             await self.emit("sobol", {"partialVariance": p_var.to_dict(), "sobolIndex": s_idx.to_dict()}, to=sid)
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit("sobol_plot", binary_data, to=sid)
         except Exception as e:
             await self.emit("error", f"Sobol error: {e}", to=sid)
@@ -995,7 +1163,7 @@ class AppHandler(socketio.AsyncNamespace):
             partial_var_df = self.data[sid]["partial_var_df"]
             sobol_index_df = self.data[sid]["sobol_index_df"]
             fig = await asyncio.to_thread(model.plot_sobol_sensitivity, self.data[sid]["selected_qoi"], param_name=qoi)
-            binary_data = await asyncio.to_thread(self.fig_to_binary, fig)
+            binary_data = await self.fig_to_binary(fig)
             await self.emit(
                 "sobol",
                 {
@@ -1015,7 +1183,7 @@ class AppHandler(socketio.AsyncNamespace):
         try:
             if not await self._check_rate_limit(sid): return
             m = self.data[sid]["model"]
-            df = pd.DataFrame(self.data[sid]["selected_sample"])
+            df = self._shap_data(sid)
             vals = await m.get_shap_values(df, mean=True)
             await self.emit("shap", vals.values.T.tolist(), to=sid)
         except Exception as e:
@@ -1032,30 +1200,36 @@ class AppHandler(socketio.AsyncNamespace):
         niter = data["niter"]
         try:
             sigma_flat = self.data[sid]["sigma"].values.flatten()
-            E = generate_stdrn_simparamset(sigma_flat)
+            E = generate_stndrn_variable_set(sigma_flat)
             dt = DigitalTwin(self.data[sid]["model"], E)
-            await asyncio.to_thread(
-                functools.partial(dt.update, self.data[sid]["zmean"], nwalkers, nburn, niter)
-            )
-            map = dt.get_MAP()
-            fig_mcmc = utils.plot_MCMC(
-                self.data[sid]["model"],
-                self.data[sid]["sample"],
-                dt,
-                nwalkers=data["nwalkers"],
-                map_point=map,
-            )
-            means_df, variances_df = dt.get_mean_and_var_of_posterior()
+            untrack = self._track_mcmc_progress(sid, dt, nwalkers, nburn, niter)
+            try:
+                await asyncio.to_thread(
+                    functools.partial(dt.update, self.data[sid]["zmean"], nwalkers, nburn, niter)
+                )
+            finally:
+                untrack()
+            # get_MAP/plot_MCMC evaluate the model many times, so keep them off the event loop.
+            map = await asyncio.to_thread(dt.get_MAP)
+            fig_mcmc = await asyncio.to_thread(dt.plot_MCMC, self.data[sid]["sample"], map=True)
+            means_df, variances_df = await asyncio.to_thread(dt.get_mean_and_var_of_posterior)
             self.data[sid]["dt"] = dt
             await self.emit(
                 "update",
                 {
-                    "mcmc": self.fig_to_binary(fig_mcmc),
+                    "mcmc": await self.fig_to_binary(fig_mcmc),
                     "mean": means_df.to_dict(),
                     "variance": variances_df.to_dict(),
                     "map": map.to_dict(),
                 },
                 to=sid,
+            )
+            # The animation reads the prior by column position.
+            sample = self.data[sid]["sample"]
+            names = dt.model.Q.variable_names()
+            prior = sample[names] if set(names).issubset(sample.columns) else sample
+            await self.send_mcmc_animation(
+                sid, lambda path: dt.animate_MCMC(prior, filename=path, map=True)
             )
         except Exception as e:
             await self.emit("error", str(e), to=sid)
@@ -1135,15 +1309,16 @@ class AppHandler(socketio.AsyncNamespace):
         try:
             joint_manager = self.data[sid]["joint_manager"]
             if joint_manager is not None:
-                map, means_df, variances_df, posterior_samples = (
-                    joint_manager.get_data_of_model(index)
+                # MAP computation evaluates the models many times; keep it off the event loop.
+                map, means_df, variances_df, posterior_samples = await asyncio.to_thread(
+                    joint_manager.get_data_of_model, index
                 )
                 self.data[sid]["posterior_samples"] = posterior_samples
                 model_names = list(self.data[sid]["models"].keys())
-                figs = utils.plot_multimodel_MCMC(
-                    joint_manager, model_names=model_names
+                figs = await asyncio.to_thread(
+                    functools.partial(joint_manager.plot_multimodel_MCMC, model_names=model_names)
                 )
-                binary_figs = [self.fig_to_binary(fig) for fig in figs]
+                binary_figs = [await self.fig_to_binary(fig) for fig in figs]
                 await self.emit(
                     "update",
                     {
@@ -1155,6 +1330,9 @@ class AppHandler(socketio.AsyncNamespace):
                     to=sid,
                 )
                 await self.emit("update_multi", binary_figs, to=sid)
+                await self.send_mcmc_animation(
+                    sid, functools.partial(self._render_joint_animation, joint_manager, index)
+                )
             else:
                 await self.emit("error", "Joint manager not found", to=sid)
         except Exception as e:
@@ -1165,7 +1343,16 @@ class AppHandler(socketio.AsyncNamespace):
             if not await self._check_rate_limit(sid): return
             means = [obj["zmean"] for obj in self.data[sid]["models"].values()]
             sigmas = [obj["sigma"] for obj in self.data[sid]["models"].values()]
-            self.data[sid]["joint_manager"].update(means, sigmas, **data)
+            joint_manager = self.data[sid]["joint_manager"]
+            untrack = self._track_mcmc_progress(
+                sid, joint_manager, data["nwalkers"], data["nburn"], data["niter"]
+            )
+            try:
+                await asyncio.to_thread(
+                    functools.partial(joint_manager.update, means, sigmas, **data)
+                )
+            finally:
+                untrack()
             await self.emit("update_done", to=sid)
         except Exception as e:
             await self.emit("error", str(e), to=sid)
@@ -1210,7 +1397,7 @@ class AppHandler(socketio.AsyncNamespace):
             Spacer(1, 16),
         ]
 
-        chart_png = self.fig_to_binary(report["figure"])
+        chart_png = await self.fig_to_binary(report["figure"])
         elements.append(RLImage(io.BytesIO(chart_png), width=460, height=290))
         elements.append(Spacer(1, 16))
 
@@ -1335,8 +1522,9 @@ class AppHandler(socketio.AsyncNamespace):
     async def on_data_driven_demo(self, sid):
         try:
             d_path = os.path.join(BASE_DIR, "demo/data/sine_data")
-            with open(os.path.join(d_path, "model2.ddpm"), "rb") as f:
+            with open(os.path.join(d_path, "model.ddpm"), "rb") as f:
                 m = pickle.load(f)
+            self.ensure_dataframes(m)
             self.data[sid].update({
                 "model": m, "variableset": m.Q, "qoi": m.QoI, "selected_qoi": m.QoI,
                 "sample": m.samples, "selected_sample": m.samples,
@@ -1427,32 +1615,18 @@ class AppHandler(socketio.AsyncNamespace):
 
     async def on_mosaic_demo(self, sid):
         try:
-            d_path = os.path.join(BASE_DIR, "demo/data/YB_data")
-            x_df = pd.read_csv(os.path.join(d_path, "x_df.csv"))
-            y_df = pd.read_csv(os.path.join(d_path, "y_df.csv"))
+            # Toy model from demo/data/mosaic/MOSAIC_toy_model_2_variables.ipynb.
+            d_path = os.path.join(BASE_DIR, "demo/data/mosaic")
+            x_df = pd.read_csv(os.path.join(d_path, "mosaic_toy_2_x_df.csv"))
+            y_df = pd.read_csv(os.path.join(d_path, "mosaic_toy_2_y_df.csv"))
 
-            with open(os.path.join(d_path, "Yoker_variableset.json")) as f:
-                variables_json = json.load(f)["variables"]
-            dist_map = {
-                "normal": NormalDistribution, "uniform": UniformDistribution,
-                "logNormal": LogNormalDistribution, "beta": BetaDistribution,
-                "exponential": ExponentialDistribution,
-            }
-            variableset = VariableSet()
-            for param in variables_json:
-                dist_cls = dist_map[param["distribution"]]
-                if param["distribution"] == "exponential":
-                    dist = dist_cls(float(param["distParam1"]))
-                else:
-                    dist = dist_cls(float(param["distParam1"]), float(param["distParam2"]))
-                variableset.add(Variable(param["name"], dist))
-
-           
-            model = PredictiveModel(variableset, y_df.columns.tolist(), "Mosaic")
+            # Use the pre-trained model instead of running the training loop.
+            with open(os.path.join(d_path, "model.msic"), "rb") as f:
+                model = await asyncio.to_thread(restricted_loads, f.read())
+            variableset = model.Q
             x_t, x_v, y_t, y_v = model.train_test_split(
-                x_df, y_df, train_test_ratio=0.8, random_seed=1997, split_type="no_shuffle"
+                x_df, y_df, train_test_ratio=0.8, random_seed=1997, split_type="shuffle"
             )
-            await asyncio.to_thread(model.train, x_t, y_t, {})
             ind_m, over_m = await asyncio.to_thread(model.evaluate_model, y_t, x_v, y_v)
 
             self.data[sid].update({
@@ -1460,16 +1634,18 @@ class AppHandler(socketio.AsyncNamespace):
                 "sample": x_df, "qoi": y_df,
                 "selected_sample": x_t, "selected_qoi": y_t,
                 "train_val_split": {"x_train": x_t, "x_val": x_v, "y_train": y_t, "y_val": y_v},
-                "zmean": pd.read_csv(os.path.join(d_path, "z_m_df.csv")),
-                "sigma": pd.read_csv(os.path.join(d_path, "sigma.csv")),
+                "zmean": pd.read_csv(os.path.join(d_path, "mosaic_toy_2_z_m_df.csv")),
+                "sigma": pd.read_csv(os.path.join(d_path, "mosaic_toy_2_sigma.csv")),
             })
 
             await self.send_model(sid)
             await self.emit("sample", x_df.to_numpy().tolist(), to=sid)
             await self.emit("qoi", y_df.describe().to_json(), to=sid)
+            await self.send_modes_and_nodes(sid, y_df)
             await self.emit("features_stats", x_df.describe().to_json(), to=sid)
             await self.emit("outputQoi", y_t.columns.tolist(), to=sid)
             await self.emit("train_metrics", {"individual": ind_m.to_dict(), "overall": over_m}, to=sid)
+            await self.send_modal_validation(sid, model, x_v, y_v)
             await self.emit("zmean", self.data[sid]["zmean"].to_dict(), to=sid)
             await self.emit("sigma", self.data[sid]["sigma"].to_dict(), to=sid)
             await self.emit("demo_done", to=sid)
