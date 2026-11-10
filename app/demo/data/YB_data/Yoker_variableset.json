@@ -1,0 +1,52 @@
+{
+  "variables": [
+    {
+      "name": "e1",
+      "distribution": "uniform",
+      "distParam1": 6,
+      "distParam2": 12,
+      "scale": 1,
+      "shift": 0
+    },
+    {
+      "name": "e2",
+      "distribution": "uniform",
+      "distParam1": 10,
+      "distParam2": 13,
+      "scale": 1,
+      "shift": 0
+    },
+    {
+      "name": "e3",
+      "distribution": "uniform",
+      "distParam1": 6,
+      "distParam2": 12,
+      "scale": 1,
+      "shift": 0
+    },
+    {
+      "name": "g1",
+      "distribution": "uniform",
+      "distParam1": 400,
+      "distParam2": 750,
+      "scale": 1,
+      "shift": 0
+    },
+    {
+      "name": "g2",
+      "distribution": "uniform",
+      "distParam1": 200,
+      "distParam2": 500,
+      "scale": 1,
+      "shift": 0
+    },
+    {
+      "name": "q",
+      "distribution": "uniform",
+      "distParam1": 5,
+      "distParam2": 100,
+      "scale": 1,
+      "shift": 0
+    }
+  ]
+}
